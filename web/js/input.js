@@ -16,7 +16,7 @@
     ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
     KeyZ: 'A', Enter: 'A', KeyX: 'B', Backspace: 'B', Delete: 'B', KeyC: 'X', KeyV: 'Y',
     KeyQ: 'L1', KeyE: 'R1', BracketLeft: 'L2', BracketRight: 'R2', Space: 'start',
-    KeyR: 'select', KeyM: 'L3', KeyI: 'R3', KeyJ: 'rsLeft', KeyL: 'rsRight'
+    KeyR: 'select', KeyM: 'L3', Tab: 'L3', KeyI: 'R3', KeyJ: 'rsLeft', KeyL: 'rsRight'
   };
 
   function Input(emit) {
@@ -91,6 +91,7 @@
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyY') { e.preventDefault(); extra('redo'); return; }
       if (e.code === 'KeyF') { extra('fast'); return; }
       if (e.code === 'KeyS') { extra('mute'); return; }
+      if (e.code === 'KeyB') { extra('board'); return; }
       if (/^Digit[1-5]$/.test(e.code)) { extra('stream', parseInt(e.code.slice(5), 10) - 1); return; }
       var b = KEYS[e.code];
       if (!b) return;

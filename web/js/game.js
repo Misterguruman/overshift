@@ -6,6 +6,9 @@
 (function (root) {
   'use strict';
   var C = root.OvershiftCore;
+  var F = root.OvershiftFloor || null;
+  var LV = F ? F.ALL : C.LEVELS;
+  var PER_CHAPTER = 10;
   var SAVE_KEY = 'overshift.save.v1';
   var RUN_INTERVAL = 0.42, FAST_INTERVAL = 0.06, HISTORY_CAP = 4000;
 
@@ -14,11 +17,11 @@
       var raw = root.localStorage && root.localStorage.getItem(SAVE_KEY);
       if (raw) {
         var s = JSON.parse(raw);
-        s.cleared = s.cleared || {}; s.best = s.best || {}; s.programs = s.programs || {};
+        s.cleared = s.cleared || {}; s.best = s.best || {}; s.programs = s.programs || {}; s.floors = s.floors || {};
         return s;
       }
     } catch (e) { /* storage unavailable */ }
-    return { current: 0, cleared: {}, best: {}, programs: {} };
+    return { current: 0, cleared: {}, best: {}, programs: {}, floors: {} };
   }
 
   function Game(opts) {
@@ -36,7 +39,7 @@
     this.overlay = null;
     this.boardSel = 0;
     this.version = 0;
-    this.selectLevel(Math.min(this.save.current || 0, C.LEVELS.length - 1), true);
+    this.selectLevel(Math.min(this.save.current || 0, LV.length - 1), true);
     if (!opts.skipBoard) this.overlay = 'board';
     this.boardSel = this.level.index;
   }
@@ -56,17 +59,23 @@
   // ---------- contracts ----------
   Game.prototype.isUnlocked = function (i) {
     if (this.unlockAll || i === 0) return true;
-    return !!this.save.cleared[C.LEVELS[i - 1].id] || !!this.save.cleared[C.LEVELS[i].id];
+    return !!this.save.cleared[LV[i - 1].id] || !!this.save.cleared[LV[i].id];
   };
+  Game.LEVELS = LV;
+  Game.PER_CHAPTER = PER_CHAPTER;
+  Game.prototype.isFloor = function () { return this.level.kind === 'floor'; };
 
   Game.prototype.selectLevel = function (i, initial) {
-    if (!this.isUnlocked(i)) { this.flash('Clear contract ' + i + ' to open this one.', 'warn'); return; }
-    this.level = C.LEVELS[i];
+    if (!this.isUnlocked(i)) { this.flash('Clear ' + LV[i - 1].name + ' to open this one.', 'warn'); return; }
+    this.level = LV[i];
     this.save.current = i;
-    var saved = this.save.programs[this.level.id];
-    this.program = saved ? JSON.parse(JSON.stringify(saved)) : [];
-    this.cursor = this.program.length - 1;
     this.paletteIdx = 0;
+    if (this.isFloor()) this.setupFloor();
+    else {
+      var saved = this.save.programs[this.level.id];
+      this.program = saved ? JSON.parse(JSON.stringify(saved)) : [];
+      this.cursor = this.program.length - 1;
+    }
     this.undoStack = []; this.redoStack = [];
     this.streamIdx = 0;
     this.revealed = this.level.visibleStreams;
@@ -80,18 +89,37 @@
 
   // ---------- program editing ----------
   Game.prototype.recompile = function () {
+    if (this.isFloor()) { this.recompileFloor(); return; }
     this.compiled = C.compile(this.program, this.level);
     this.ctx = { level: this.level, program: this.program, compiled: this.compiled, order: C.orderFor(this.level, this.streamIdx) };
   };
 
+  // ---------- editing helpers shared by both chapters ----------
+  Game.prototype.curPalette = function () { return this.isFloor() ? this.nodePalette() : this.level.palette; };
+  Game.prototype.curLimit = function () { return this.isFloor() ? this.nodeCap() : this.level.limit; };
+  Game.prototype.argOpts = function (op) { return this.isFloor() ? F.argOptions(op, this.activeType()) : C.argOptions(op); };
+  Game.prototype.argNext = function (op, arg, dir) { return this.isFloor() ? F.cycleArg(op, this.activeType(), arg, dir) : C.cycleArg(op, arg, dir); };
+  Game.prototype.argDefault = function (op) { return this.isFloor() ? F.defaultArg(op, this.activeType()) : C.defaultArg(op); };
+  Game.prototype.argText = function (line) { return this.isFloor() ? F.argLabel(line.op, line.arg) : C.argLabel(line.op, line.arg); };
+  Game.prototype.snapEdit = function () {
+    if (this.isFloor()) return this.snapFloor();
+    return JSON.stringify({ p: this.program, c: this.cursor });
+  };
+  Game.prototype.restoreEdit = function (raw) {
+    var s = JSON.parse(raw);
+    if (this.isFloor()) { this.restoreFloor(s); return; }
+    this.program = s.p; this.cursor = Math.min(s.c, this.program.length - 1);
+  };
+
   Game.prototype.pushUndo = function () {
-    this.undoStack.push(JSON.stringify({ p: this.program, c: this.cursor }));
+    this.undoStack.push(this.snapEdit());
     if (this.undoStack.length > 200) this.undoStack.shift();
     this.redoStack = [];
   };
 
   Game.prototype.afterEdit = function () {
-    this.save.programs[this.level.id] = this.program;
+    if (this.isFloor()) this.save.floors[this.level.id] = this.floor;
+    else this.save.programs[this.level.id] = this.program;
     this.persist();
     this.recompile();
     this.reset();
@@ -104,16 +132,17 @@
 
   Game.prototype.insert = function (op) {
     this.ensureEditing();
-    if (this.level.palette.indexOf(op) < 0) return;
-    var counts = op !== 'END' && op !== 'ELSE';
-    if (counts && this.level.limit && C.programSize(this.program) + 1 > this.level.limit) {
-      this.flash('This contract allows ' + this.level.limit + ' lines (END and ELSE are free).', 'warn');
+    if (this.isFloor() && this.active < 0) { this.flash('Place a node in Build mode first (L3 switches modes).', 'warn'); this.sfx.play('deny'); return; }
+    if (this.curPalette().indexOf(op) < 0) return;
+    var counts = op !== 'END' && op !== 'ELSE', limit = this.curLimit();
+    if (counts && limit && C.programSize(this.program) + 1 > limit) {
+      this.flash(this.isFloor() ? this.level.slots[this.active].label + ' holds ' + limit + ' lines (END and ELSE are free).' : 'This contract allows ' + limit + ' lines (END and ELSE are free).', 'warn');
       this.sfx.play('deny');
       return;
     }
     this.pushUndo();
     var line = { op: op };
-    var d = C.defaultArg(op);
+    var d = this.argDefault(op);
     if (d !== undefined) line.arg = d;
     var pos = this.cursor + 1;
     this.program.splice(pos, 0, line);
@@ -177,31 +206,29 @@
     this.ensureEditing();
     if (i < 0 || i >= this.program.length) return;
     var line = this.program[i];
-    if (!C.argOptions(line.op)) return;
+    if (!this.argOpts(line.op)) return;
     this.pushUndo();
-    line.arg = C.cycleArg(line.op, line.arg, dir);
+    line.arg = this.argNext(line.op, line.arg, dir);
     this.sfx.play('tick');
     this.afterEdit();
   };
 
   Game.prototype.undo = function () {
     if (!this.undoStack.length) return;
-    this.redoStack.push(JSON.stringify({ p: this.program, c: this.cursor }));
-    var s = JSON.parse(this.undoStack.pop());
-    this.program = s.p; this.cursor = Math.min(s.c, this.program.length - 1);
+    this.redoStack.push(this.snapEdit());
+    this.restoreEdit(this.undoStack.pop());
     this.sfx.play('tick');
     this.afterEdit();
   };
   Game.prototype.redo = function () {
     if (!this.redoStack.length) return;
-    this.undoStack.push(JSON.stringify({ p: this.program, c: this.cursor }));
-    var s = JSON.parse(this.redoStack.pop());
-    this.program = s.p; this.cursor = Math.min(s.c, this.program.length - 1);
+    this.undoStack.push(this.snapEdit());
+    this.restoreEdit(this.redoStack.pop());
     this.sfx.play('tick');
     this.afterEdit();
   };
 
-  Game.prototype.viewModelSize = function () { return C.programSize(this.program); };
+  Game.prototype.viewModelSize = function () { return this.isFloor() ? F.floorSize(this.level, this.floor) : C.programSize(this.program); };
 
   Game.prototype.moveCursor = function (dy) {
     var n = this.program.length;
@@ -210,7 +237,7 @@
 
   // ---------- running ----------
   Game.prototype.reset = function () {
-    this.sim = C.initState(this.level, this.streamIdx);
+    this.sim = this.isFloor() ? F.initState(this.level, this.streamIdx) : C.initState(this.level, this.streamIdx);
     this.history = [this.sim];
     this.mode = 'edit';
     this.acc = 0;
@@ -219,6 +246,7 @@
   };
 
   Game.prototype.checkProgram = function () {
+    if (this.isFloor()) return this.checkFloor();
     if (!this.compiled.ok) {
       var e = this.compiled.errors[0];
       this.cursor = e.line;
@@ -231,7 +259,7 @@
   };
 
   Game.prototype.stepOnce = function () {
-    var next = C.step(this.ctx, this.sim);
+    var next = this.isFloor() ? F.step(this.fctx, this.sim) : C.step(this.ctx, this.sim);
     this.sim = next;
     this.history.push(next);
     if (this.history.length > HISTORY_CAP) this.history.splice(1, 1);
@@ -282,12 +310,13 @@
     this.mode = 'done';
     var st = this.sim;
     if (st.status === 'fault') {
-      if (st.line >= 0) this.cursor = st.line;
+      if (this.isFloor()) this.showFloorFault(st);
+      else if (st.line >= 0) this.cursor = st.line;
       this.flash(st.msg, 'fault');
       this.sfx.play('fault');
       return;
     }
-    var ev = C.evaluate(this.level, this.program);
+    var ev = this.isFloor() ? F.evaluate(this.level, this.floor) : C.evaluate(this.level, this.program);
     this.result = ev;
     if (ev.cleared) {
       var id = this.level.id;
@@ -296,6 +325,7 @@
       var best = this.save.best[id] || {};
       if (best.size === undefined || ev.size < best.size) best.size = ev.size;
       if (best.cycles === undefined || ev.cycles < best.cycles) best.cycles = ev.cycles;
+      if (ev.parts !== undefined && (best.parts === undefined || ev.parts < best.parts)) best.parts = ev.parts;
       this.save.best[id] = best;
       this.persist();
       ev.firstClear = firstClear;
@@ -304,7 +334,7 @@
       return;
     }
     if (!ev.limitOk) {
-      this.flash('Order filled, but the program is ' + ev.size + ' lines and the limit is ' + this.level.limit + '.', 'fault');
+      this.flash(this.isFloor() ? 'Orders filled, but a node holds more lines than its cap.' : 'Order filled, but the program is ' + ev.size + ' lines and the limit is ' + this.level.limit + '.', 'fault');
       this.sfx.play('fault');
       return;
     }
@@ -324,12 +354,16 @@
   };
 
   // ---------- trace-back ----------
-  Game.prototype.outputCells = function () { return this.sim.shipped.concat(this.sim.scrapped); };
+  Game.prototype.outputCells = function () {
+    if (this.isFloor()) return this.floorOutputs();
+    return this.sim.shipped.concat(this.sim.scrapped);
+  };
   Game.prototype.traceCell = function (id) {
     var cells = this.outputCells();
     for (var i = 0; i < cells.length; i++) {
       if (cells[i].id === id) {
         this.inspectIdx = i;
+        if (this.isFloor()) { this.traceFloorCell(cells[i]); return; }
         this.traceLine = cells[i].line === undefined ? -1 : cells[i].line;
         if (this.traceLine >= 0) this.cursor = this.traceLine;
         this.sfx.play('tick');
@@ -347,7 +381,7 @@
 
   // ---------- input ----------
   Game.prototype.pickPalette = function (d) {
-    var n = this.level.palette.length;
+    var n = this.curPalette().length;
     if (!n) return;
     this.paletteIdx = (this.paletteIdx + d + n) % n;
     this.sfx.play('tick');
@@ -362,10 +396,12 @@
 
     if (this.overlay === 'board') {
       if (!press) return;
-      var n = C.LEVELS.length, cols = 5;
+      var n = LV.length, cols = 5, per = PER_CHAPTER;
+      var page = Math.floor(this.boardSel / per) * per;
       if (b === 'left') this.boardSel = (this.boardSel + n - 1) % n;
       else if (b === 'right') this.boardSel = (this.boardSel + 1) % n;
-      else if (b === 'up' || b === 'down') this.boardSel = (this.boardSel + cols) % n;
+      else if (b === 'up' || b === 'down') this.boardSel = Math.min(n - 1, page + (this.boardSel - page + cols) % per);
+      else if ((b === 'L1' || b === 'R1') && phase === 'down') this.boardSel = (this.boardSel + (b === 'L1' ? n - per : per)) % n;
       else if (b === 'A' && phase === 'down') this.selectLevel(this.boardSel);
       else if ((b === 'B' || b === 'L3' || b === 'start') && phase === 'down') this.overlay = null;
       return;
@@ -381,6 +417,7 @@
 
     // while the deck is actively running, editing buttons do nothing (cursor and palette still move)
     var live = this.mode === 'run' || this.mode === 'fast';
+    if (this.isFloor() && this.floorButton(b, phase, press, live)) return;
     if (live && (b === 'X' || b === 'A' || b === 'Y')) return;
 
     switch (b) {
@@ -396,7 +433,7 @@
       case 'A':
         if (phase === 'down') { this.aMoved = false; this.aArmed = true; }
         else if (phase === 'up') {
-          if (this.aArmed && !this.aMoved) this.insert(this.level.palette[this.paletteIdx]);
+          if (this.aArmed && !this.aMoved) this.insert(this.curPalette()[this.paletteIdx]);
           this.aArmed = false;
         }
         return;
@@ -452,7 +489,7 @@
 
   Game.prototype.nextLevel = function () {
     var i = this.level.index + 1;
-    if (i < C.LEVELS.length) this.selectLevel(i);
+    if (i < LV.length) this.selectLevel(i);
     else { this.overlay = 'board'; this.boardSel = this.level.index; this.flash('That was the last contract in this build.', 'info'); }
   };
 
@@ -463,7 +500,7 @@
     switch (a.type) {
       case 'btn': this.button(a.b, a.phase); break;
       case 'cursorTo': this.cursor = Math.max(-1, Math.min(this.program.length - 1, a.i)); break;
-      case 'palette': this.paletteIdx = a.i; this.insert(this.level.palette[a.i]); break;
+      case 'palette': this.paletteIdx = a.i; this.insert(this.curPalette()[a.i]); break;
       case 'delete': this.deleteLine(a.i); break;
       case 'move': this.moveLine(a.i, a.dy); break;
       case 'cycle': this.cycleArg(a.i, a.dir || 1); break;
@@ -477,25 +514,27 @@
       case 'stream': this.setStream(a.i); break;
       case 'board': this.overlay = this.overlay === 'board' ? null : 'board'; this.boardSel = this.level.index; break;
       case 'level': this.selectLevel(a.i); break;
+      case 'boardPage': this.overlay = 'board'; this.boardSel = Math.max(0, Math.min(LV.length - 1, a.i)); break;
       case 'trace': this.traceCell(a.id); break;
       case 'next': this.nextLevel(); break;
       case 'close': this.overlay = null; break;
       case 'mute': this.sfx.toggle && this.sfx.toggle(); break;
+      default: if (this.isFloor()) this.floorAct(a);
     }
     this.changed();
   };
 
   /** Plain-data snapshot for the editor view (sent across screens on Android). */
   Game.prototype.viewModel = function () {
-    var lv = this.level, sim = this.sim;
+    var lv = this.level, sim = this.sim, self = this;
     var running = this.mode !== 'edit';
-    return {
+    var vm = {
       v: this.version,
-      level: { index: lv.index, name: lv.name, brief: lv.brief, teaches: lv.teaches, limit: lv.limit || 0, parSize: lv.parSize, palette: lv.palette },
+      level: { index: lv.index, num: lv.num || lv.index + 1, chapter: lv.chapter || 1, kind: lv.kind || 'servo', name: lv.name, brief: lv.brief, teaches: lv.teaches, limit: this.curLimit() || 0, parSize: lv.parSize, palette: this.curPalette() },
       program: this.program,
       indents: C.indents(this.program),
-      labels: this.program.map(function (l) { return C.argLabel(l.op, l.arg); }),
-      hasArg: this.program.map(function (l) { return !!C.argOptions(l.op); }),
+      labels: this.program.map(function (l) { return self.argText(l); }),
+      hasArg: this.program.map(function (l) { return !!self.argOpts(l.op); }),
       errors: this.compiled.errors,
       size: C.programSize(this.program),
       cursor: this.cursor,
@@ -515,6 +554,8 @@
       overlay: this.overlay,
       muted: !!(this.sfx.muted)
     };
+    if (this.isFloor()) this.floorViewModel(vm);
+    return vm;
   };
 
   root.OvershiftGame = Game;

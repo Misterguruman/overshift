@@ -108,6 +108,41 @@ body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user
 .ed-transport button:disabled { opacity: .3; }
 .ed-run { border-color: var(--cyan) !important; color: var(--cyan) !important; box-shadow: 0 0 .5em rgba(34,232,255,.25); }
 .ed[data-mode=run] .ed-run, .ed[data-mode=fast] .ed-run { border-color: var(--amber) !important; color: var(--amber) !important; }
+
+/* ---- chapter 2: Junction Floor ---- */
+.ed-modes, .ed-build { display: none; }
+.ed-floor .ed-modes { display: flex; align-items: center; gap: .3em; padding: .25em .4em; border-bottom: 1px solid var(--faint); flex: 0 0 auto; overflow-x: auto; scrollbar-width: none; }
+.md { background: var(--panel); border: 1px solid var(--faint); border-radius: .35em; padding: .15em .6em; font-size: .8em !important; font-weight: 600; color: var(--dim) !important; }
+.md.on { border-color: var(--amber); color: var(--amber) !important; }
+.md[data-fmode=program].on { border-color: var(--cyan); color: var(--cyan) !important; }
+.md-tabs { display: flex; gap: .25em; margin-left: .4em; }
+.nt { background: transparent; border: 1px solid var(--faint); border-radius: .35em; padding: .1em .45em; font-size: .75em !important; font-weight: 600; }
+.nt.on { background: #0b1828; border-color: currentColor; }
+.nt.lit { box-shadow: 0 0 .5em currentColor; }
+.n-spl { color: var(--cyan) !important; } .n-pnt { color: var(--magenta) !important; } .n-prs { color: var(--amber) !important; } .n-cnt { color: var(--lime) !important; }
+.ed-building .ed-main { display: none; }
+.ed-building .ed-build { flex: 1 1 auto; display: flex; min-height: 0; }
+.ed-mapbox { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; padding: .3em; }
+.ed-map { display: grid; gap: 1px; background: #0b1420; }
+.mt { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #03070d; color: var(--ink); font-weight: 700; line-height: 1; overflow: hidden; }
+.mt.m-wall { background: repeating-linear-gradient(45deg, #0b1220 0 4px, #16233a 4px 6px); }
+.mt.m-in { color: var(--cyan); box-shadow: inset 0 0 0 2px var(--cyan); }
+.mt.m-dock { color: var(--green); box-shadow: inset 0 0 0 2px var(--green); }
+.mt.m-rcy { color: var(--violet); box-shadow: inset 0 0 0 2px var(--violet); }
+.mt.m-old { color: #6b4f86; }
+.mt.m-belt { color: var(--cyan); background: #071019; }
+.mt.m-bridge { color: var(--violet); background: #0b0a1a; }
+.mt.m-node { background: #0b1828; box-shadow: inset 0 0 0 2px currentColor; }
+.mt.m-node span { font-size: .62em; } .mt.m-node i { font-style: normal; font-size: .9em; }
+.mt.m-cur { outline: 2px dashed var(--ink); outline-offset: -3px; z-index: 1; }
+.mt.m-cell::after { content: "⬢"; position: absolute; right: 6%; top: 2%; font-size: .7em; }
+.mt.m-fault { background: rgba(255,59,92,.3); }
+.ed-parts { flex: 0 0 30%; display: flex; flex-direction: column; gap: .28em; padding: .35em; border-left: 1px solid var(--faint); overflow-y: auto; min-width: 0; }
+.pt { display: flex; justify-content: space-between; align-items: center; padding: .32em .5em !important; }
+.pt i { font-style: normal; color: var(--dim); font-weight: 500; }
+.pt-rm { color: var(--red) !important; }
+.pt-n { font-size: .72em; padding: .1em .2em; }
+.pt-clr { margin-top: auto; color: var(--dim) !important; justify-content: center; }
 </style>
 </head>
 <body>
@@ -130,7 +165,8 @@ body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user
             <tr><td>[ / ]</td><td>step back / step</td></tr>
             <tr><td>R</td><td>reset the deck</td></tr>
             <tr><td>V, Q+V</td><td>undo, redo (Ctrl+Z works too)</td></tr>
-            <tr><td>M</td><td>contract board</td></tr>
+            <tr><td>M or Tab</td><td>contract board; in chapter 2, Build / Program</td></tr>
+            <tr><td>B</td><td>contract board</td></tr>
             <tr><td>J / L, I</td><td>inspect shipped cells, trace-back</td></tr>
             <tr><td>1-5, S</td><td>pick a stream, sound on/off</td></tr>
           </table>
@@ -148,21 +184,26 @@ body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user
             <tr><td>L2 / R2</td><td>step back / step (hold to scrub)</td></tr>
             <tr><td>Start</td><td>run / pause, twice for fast</td></tr>
             <tr><td>Select</td><td>reset</td></tr>
-            <tr><td>L3</td><td>contract board</td></tr>
+            <tr><td>L3</td><td>contract board; in chapter 2, Build / Program (L1+L3 board)</td></tr>
             <tr><td>right stick, R3</td><td>inspect, trace-back</td></tr>
           </table>
         </div>
       </div>
       <p style="margin-top:10px">Tap a shipped or scrapped cell on the deck to jump to the line that moved it. Swipe a line left to delete it.</p>
+      <h2 style="margin-top:12px">CHAPTER 2 · JUNCTION FLOOR</h2>
+      <p>Build mode: the d-pad moves the tile cursor, hold X + ← → picks a part, tap X turns it, A places (hold A and move to draw a belt), B removes, Y undoes. Tap tiles on either screen to place. Program mode: the editor works as in chapter 1 on one node; L1 + ← → or a tab switches nodes. A belt takes cells from its back and sides; a node only from its back.</p>
     </div>
   </div>
   <div id="editor"></div>
 </div>
 <script src="js/core.js"></script>
+<script src="js/floor.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/input.js"></script>
 <script src="js/game.js"></script>
+<script src="js/floorgame.js"></script>
 <script src="js/deck.js"></script>
+<script src="js/floordeck.js"></script>
 <script src="js/editor.js"></script>
 <script src="js/main.js"></script>
 </body>

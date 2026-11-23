@@ -93,6 +93,63 @@ const base = process.argv[3] || 'http://127.0.0.1:8765/index.html';
   console.log('fault message:', await p2.evaluate(() => Overshift.game.sim.msg));
   await ctx2.close();
 
+  // chapter 2: build a floor by tapping the bottom-screen map, then run every reference floor
+  for (const [name, w, h] of [['ch2-desktop', 1440, 900], ['ch2-thor-top', 960, 540], ['ch2-thor-bottom', 620, 540]]) {
+    const c4 = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2 });
+    const p4 = await c4.newPage();
+    watch(p4, name);
+    await p4.goto(base + '?unlock=all', { waitUntil: 'load' });
+    await p4.evaluate(() => { const g = Overshift.game; g.selectLevel(OvershiftCore.LEVELS.length); g.changed(); });
+    await p4.waitForTimeout(250);
+    await p4.screenshot({ path: `${out}/${name}-build-empty.png` });
+    if (name === 'ch2-desktop') {
+      await p4.click('.ed-map [data-tile="1,2"]');
+      await p4.click('.ed-map [data-tile="2,2"]');
+      const laid = await p4.evaluate(() => Object.keys(Overshift.game.floor.tiles).length);
+      console.log('map taps lay belts:', laid === 2);
+      if (laid !== 2) problems++;
+      await p4.keyboard.press('Tab');
+      const mode = await p4.evaluate(() => Overshift.game.fmode);
+      console.log('Tab with no node stays in Build:', mode === 'build');
+    }
+    await p4.evaluate(() => {
+      const g = Overshift.game; g.floor = JSON.parse(JSON.stringify(g.level.refFloor));
+      g.active = OvershiftFloor.placedSlots(g.floor)[0]; g.bindActive(); g.afterEdit(); g.changed();
+    });
+    await p4.waitForTimeout(200);
+    await p4.screenshot({ path: `${out}/${name}-build-ref.png` });
+    await p4.keyboard.press('Tab');
+    await p4.waitForTimeout(200);
+    await p4.screenshot({ path: `${out}/${name}-program.png` });
+    await p4.keyboard.press('Space');
+    await p4.waitForTimeout(1200);
+    await p4.screenshot({ path: `${out}/${name}-running.png` });
+    await c4.close();
+  }
+  {
+    const c5 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const p5 = await c5.newPage(); watch(p5, 'ch2-all');
+    await p5.goto(base + '?unlock=all', { waitUntil: 'load' });
+    const n1 = await p5.evaluate(() => OvershiftCore.LEVELS.length);
+    for (let i = 0; i < 10; i++) {
+      await p5.evaluate(i => {
+        const g = Overshift.game; g.selectLevel(i); g.floor = JSON.parse(JSON.stringify(g.level.refFloor));
+        g.active = OvershiftFloor.placedSlots(g.floor)[0]; g.bindActive(); g.afterEdit(); g.run(true);
+        let k = 0; while (g.mode !== 'done' && k++ < 2000) g.tick(5);
+        g.changed();
+      }, n1 + i);
+      await p5.waitForTimeout(100);
+      const r = await p5.evaluate(() => ({ id: Overshift.game.level.id, ok: Overshift.game.overlay === 'cleared' }));
+      if (!r.ok) { problems++; console.log('chapter 2 reference did not clear in browser:', r.id); }
+      if (i === 9) await p5.screenshot({ path: `${out}/ch2-night-audit-cleared.png` });
+    }
+    await p5.evaluate(() => { const g = Overshift.game; g.overlay = 'board'; g.boardSel = OvershiftCore.LEVELS.length; g.changed(); });
+    await p5.waitForTimeout(200);
+    await p5.screenshot({ path: `${out}/ch2-board.png` });
+    console.log('chapter 2 references ran in browser');
+    await c5.close();
+  }
+
   // two windows: deck host + remote editor over BroadcastChannel
   const ctx3 = await browser.newContext({ viewport: { width: 960, height: 540 } });
   const deckPage = await ctx3.newPage(); watch(deckPage, 'deck');

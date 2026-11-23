@@ -5,7 +5,9 @@
  */
 (function (root) {
   'use strict';
-  var KIND = { GRAB: 'act', SHIP: 'act', SCRAP: 'act', PAINT: 'act', CHARGE: 'act', DRAIN: 'act', LOOP: 'flow', IF: 'flow', ELSE: 'flow', END: 'flow' };
+  var KIND = { GRAB: 'act', SHIP: 'act', SCRAP: 'act', PAINT: 'act', CHARGE: 'act', DRAIN: 'act', SEND: 'act', TICK: 'act', CLEAR: 'act', LOOP: 'flow', IF: 'flow', ELSE: 'flow', END: 'flow' };
+  var ARROWS = ['→', '↓', '←', '↑'];
+  var NODE_CLS = { splitter: 'n-spl', painter: 'n-pnt', press: 'n-prs', counter: 'n-cnt' };
   var COLORS = ['cyan', 'magenta', 'amber', 'lime'];
 
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -25,6 +27,8 @@
       '  <button class="ed-icon" data-act="redo" title="Redo (L1+Y)">↷</button>' +
       '  <button class="ed-icon ed-snd" data-act="mute" title="Sound (S)">♪</button>' +
       '</header>' +
+      '<div class="ed-modes"></div>' +
+      '<div class="ed-build"><div class="ed-mapbox"><div class="ed-map"></div></div><div class="ed-parts"></div></div>' +
       '<div class="ed-main">' +
       '  <div class="ed-prog"></div>' +
       '  <div class="ed-side">' +
@@ -52,7 +56,13 @@
       undo: this.el.querySelector('[data-act=undo]'),
       redo: this.el.querySelector('[data-act=redo]'),
       back: this.el.querySelector('[data-act=back]'),
-      snd: this.el.querySelector('.ed-snd')
+      snd: this.el.querySelector('.ed-snd'),
+      modes: this.el.querySelector('.ed-modes'),
+      build: this.el.querySelector('.ed-build'),
+      mapbox: this.el.querySelector('.ed-mapbox'),
+      map: this.el.querySelector('.ed-map'),
+      parts: this.el.querySelector('.ed-parts'),
+      main: this.el.querySelector('.ed-main')
     };
     this.bind();
     var self = this;
@@ -67,6 +77,19 @@
     var fs = Math.max(11, Math.min(24, Math.min(h / 21, w / 22)));
     this.el.style.fontSize = fs.toFixed(1) + 'px';
     this.el.classList.toggle('ed-wide', w / h > 1.45);
+    this.layoutMap();
+  };
+
+  /** Size the build map to the largest square tiles that fit its box. */
+  Editor.prototype.layoutMap = function () {
+    var vm = this.vm;
+    if (!vm || !vm.floor || vm.floor.fmode !== 'build') return;
+    var bw = this.q.mapbox.clientWidth, bh = this.q.mapbox.clientHeight;
+    if (!bw || !bh) return;
+    var ts = Math.floor(Math.min(bw / vm.floor.W, bh / vm.floor.H));
+    this.q.map.style.width = ts * vm.floor.W + 'px';
+    this.q.map.style.height = ts * vm.floor.H + 'px';
+    this.q.map.style.fontSize = Math.max(8, ts * 0.32).toFixed(1) + 'px';
   };
 
   Editor.prototype.bind = function () {
@@ -85,9 +108,13 @@
       // swipe a line left to delete it
       if (row && dx < -60 && Math.abs(dy) < 40 && row.dataset.i >= 0) { self.dispatch({ type: 'delete', i: +row.dataset.i }); return; }
       if (Math.abs(dx) > 12 || Math.abs(dy) > 12) return; // a scroll, not a tap
-      var t = start.closest && start.closest('[data-act],[data-pal],[data-cycle],[data-tool],.row');
+      var t = start.closest && start.closest('[data-act],[data-pal],[data-cycle],[data-tool],[data-tile],[data-part],[data-fmode],[data-tab],.row');
       if (!t) return;
       if (t.dataset.act) { self.dispatch({ type: t.dataset.act }); return; }
+      if (t.dataset.tile) { var xy = t.dataset.tile.split(','); self.dispatch({ type: 'tile', x: +xy[0], y: +xy[1] }); return; }
+      if (t.dataset.part !== undefined) { self.dispatch({ type: 'part', i: +t.dataset.part }); return; }
+      if (t.dataset.fmode) { self.dispatch({ type: 'fmode', m: t.dataset.fmode }); return; }
+      if (t.dataset.tab !== undefined) { self.dispatch({ type: 'tab', s: +t.dataset.tab }); return; }
       if (t.dataset.pal !== undefined) { self.dispatch({ type: 'palette', i: +t.dataset.pal }); return; }
       if (t.dataset.cycle !== undefined) { self.dispatch({ type: 'cycle', i: +t.dataset.cycle, dir: 1 }); return; }
       if (t.dataset.tool) {
@@ -115,7 +142,18 @@
     var editing = vm.mode === 'edit' || vm.mode === 'done' || vm.mode === 'pause';
     this.el.dataset.mode = vm.mode;
 
-    q.title.innerHTML = '<b>' + pad2(lv.index + 1) + '</b> ' + esc(lv.name);
+    var fl = vm.floor, building = !!fl && fl.fmode === 'build';
+    this.el.classList.toggle('ed-floor', !!fl);
+    this.el.classList.toggle('ed-building', building);
+    q.title.innerHTML = '<b>' + (lv.chapter === 2 ? '2-' + pad2(lv.num) : pad2(lv.index + 1)) + '</b> ' + esc(lv.name);
+    if (fl) {
+      var act = fl.active >= 0 ? fl.slots[fl.active] : null;
+      q.size.innerHTML = act
+        ? esc(act.label) + ' <b>' + vm.size + '</b><span class="' + (vm.size > act.cap ? 'bad' : '') + '">/' + act.cap + '</span>' + (act.t === 'counter' ? ' <span class="ed-dim">count ' + act.mem + '</span>' : '') + ' <span class="ed-dim">floor ' + fl.size + '·par ' + fl.parSize + '</span>'
+        : 'No node placed yet';
+      this.renderModes(vm);
+      if (building) this.renderBuild(vm);
+    } else
     q.size.innerHTML = 'SIZE <b>' + vm.size + '</b>' + (lv.limit ? ' <span class="' + (vm.size > lv.limit ? 'bad' : '') + '">/ ' + lv.limit + ' max</span>' : '') + ' <span class="ed-dim">par ' + lv.parSize + '</span>';
     q.undo.disabled = !vm.canUndo; q.redo.disabled = !vm.canRedo; q.back.disabled = !vm.canBack;
     q.snd.classList.toggle('off', !!vm.muted);
@@ -147,7 +185,7 @@
         '<span class="code" style="padding-left:' + (vm.indents[i] * 0.85) + 'em"><span class="op">' + ln.op + '</span>' + arg + '</span>' +
         tools + '</div>';
     }
-    if (!vm.program.length) html += '<div class="ed-empty">Pick an instruction from the palette. It goes in below the cursor.</div>';
+    if (!vm.program.length) html += '<div class="ed-empty">' + (fl && fl.active < 0 ? 'Place a node in Build mode, then program it here.' : 'Pick an instruction from the palette. It goes in below the cursor.') + '</div>';
     q.prog.innerHTML = html;
 
     // palette
@@ -157,12 +195,13 @@
       pal += '<button class="tile k-' + KIND[op] + (p === vm.paletteIdx ? ' sel' : '') + '" data-pal="' + p + '">' + op + '</button>';
     }
     q.pal.innerHTML = pal;
-    q.held.innerHTML = heldHtml(vm.held);
+    q.held.innerHTML = heldHtml(vm.held).replace('HELD', fl ? 'CELL' : 'HELD');
 
     // message line
     var msg, kind = '';
     if (vm.flash) { msg = vm.flash.msg; kind = vm.flash.kind; }
     else if (vm.errors.length) { msg = 'Line ' + (vm.errors[0].line + 1) + ': ' + vm.errors[0].msg; kind = 'warn'; }
+    else if (vm.mode === 'edit' && building) msg = 'Tap a tile to place the part. Tap it again to turn it.';
     else if (vm.mode === 'edit') msg = 'Tap a tile to add it below the cursor. Tap a value to change it.';
     else if (vm.mode === 'pause') msg = 'Paused. Step, Back or Run.';
     else if (vm.mode === 'done' && vm.status === 'win') { msg = 'Order filled.'; kind = 'ok'; }
@@ -170,6 +209,7 @@
     q.msg.className = 'ed-msg ' + kind;
     q.msg.textContent = msg;
 
+    this.layoutMap();
     // keep the interesting line in view
     var focus = q.prog.querySelector('.lit, .faulted') || q.prog.querySelector('.cursor');
     if (focus) {
@@ -177,6 +217,54 @@
       if (top < q.prog.scrollTop) q.prog.scrollTop = top - 4;
       else if (bottom > q.prog.scrollTop + q.prog.clientHeight) q.prog.scrollTop = bottom - q.prog.clientHeight + 4;
     }
+  };
+
+  Editor.prototype.renderModes = function (vm) {
+    var fl = vm.floor, html = '';
+    html += '<button class="md' + (fl.fmode === 'build' ? ' on' : '') + '" data-fmode="build">Build</button>';
+    html += '<button class="md' + (fl.fmode === 'program' ? ' on' : '') + '" data-fmode="program">Program</button>';
+    html += '<span class="md-tabs">';
+    fl.slots.forEach(function (s, i) {
+      if (!s.placed) return;
+      var on = fl.fmode === 'program' && fl.active === i, lit = fl.lineSlot === i;
+      html += '<button class="nt ' + NODE_CLS[s.t] + (on ? ' on' : '') + (lit ? ' lit' : '') + '" data-tab="' + i + '">' + esc(s.label) + '</button>';
+    });
+    html += '</span>';
+    this.q.modes.innerHTML = html;
+  };
+
+  Editor.prototype.renderBuild = function (vm) {
+    var fl = vm.floor, html = '';
+    this.q.map.style.gridTemplateColumns = 'repeat(' + fl.W + ', 1fr)';
+    for (var y = 0; y < fl.H; y++) {
+      for (var x = 0; x < fl.W; x++) {
+        var ch = fl.map[y][x], t = fl.tiles[x + ',' + y], cls = 'mt', txt = '';
+        if (ch === '#') cls += ' m-wall';
+        else if (ch === 'I') { cls += ' m-in'; txt = 'IN'; }
+        else if (ch === 'R') { cls += ' m-rcy'; txt = 'R'; }
+        else if (/[A-C]/.test(ch)) { cls += ' m-dock'; txt = ch; }
+        else if ('>v<^'.indexOf(ch) >= 0 && !t) { cls += ' m-old'; txt = ARROWS['>v<^'.indexOf(ch)]; }
+        if (t) {
+          if (t.k === 'belt') { cls += ' m-belt'; txt = ARROWS[t.d]; }
+          else if (t.k === 'bridge') { cls += ' m-bridge'; txt = '╋'; }
+          else if (t.k === 'node') { var sl = fl.slots[t.s]; cls += ' m-node ' + NODE_CLS[sl.t]; txt = '<span>' + esc(sl.label) + '</span><i>' + ARROWS[t.d] + '</i>'; }
+        }
+        if (fl.tc.x === x && fl.tc.y === y) cls += ' m-cur';
+        if (fl.cell && fl.cell.x === x && fl.cell.y === y) cls += ' m-cell c-' + fl.cell.c + '-t';
+        if (fl.faultAt && fl.faultAt.x === x && fl.faultAt.y === y) cls += ' m-fault';
+        html += '<div class="' + cls + '" data-tile="' + x + ',' + y + '">' + txt + '</div>';
+      }
+    }
+    this.q.map.innerHTML = html;
+    var parts = '';
+    fl.parts.forEach(function (p, i) {
+      var left = p.left !== undefined ? '<i>' + p.left + '/' + p.total + '</i>' : '';
+      parts += '<button class="tile pt' + (p.k === 'node' ? ' ' + NODE_CLS[p.t] : '') + (p.k === 'remove' ? ' pt-rm' : '') + (i === fl.partIdx ? ' sel' : '') + '" data-part="' + i + '">' + esc(p.label) + left + '</button>';
+    });
+    parts += '<button class="tile pt" data-act="rotate">Turn ' + ARROWS[fl.facing] + '</button>';
+    parts += '<div class="ed-dim pt-n">Parts ' + fl.parts_n + ' · par ' + fl.parParts + '</div>';
+    parts += '<button class="tile pt pt-clr" data-act="clearFloor">Clear floor</button>';
+    this.q.parts.innerHTML = parts;
   };
 
   root.OvershiftEditor = Editor;

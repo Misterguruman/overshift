@@ -151,10 +151,13 @@
 
     this.drawBackdrop();
     this.drawHeader(lv, game);
-    this.drawRail(lv, sim, dt);
-    this.drawBelts(lv, sim, game);
-    this.drawStatus(game);
-    this.drawTicket(lv, game);
+    if (game.isFloor && game.isFloor() && this.drawFloorScene) this.drawFloorScene(dt);
+    else {
+      this.drawRail(lv, sim, dt);
+      this.drawBelts(lv, sim, game);
+      this.drawStatus(game);
+      this.drawTicket(lv, game);
+    }
 
     if (this.faultFlash > 0) {
       g.fillStyle = 'rgba(255,40,70,' + (0.18 * this.faultFlash) + ')';
@@ -197,11 +200,11 @@
     g.fillStyle = 'rgba(0,0,0,0.85)';
     g.fillRect(0, 0, W, 118);
     g.strokeStyle = FAINT; g.beginPath(); g.moveTo(0, 118); g.lineTo(W, 118); g.stroke();
-    var num = ('0' + (lv.index + 1)).slice(-2);
+    var label = 'CONTRACT ' + (lv.chapter === 2 ? '2-' + ('0' + lv.num).slice(-2) : ('0' + (lv.index + 1)).slice(-2));
     this.glow(COL.cyan, 14);
-    this.text('CONTRACT ' + num, 40, 40, 26, COL.cyan, 'left', '600');
+    this.text(label, 40, 40, 26, COL.cyan, 'left', '600');
     this.noGlow();
-    this.text(lv.name.toUpperCase(), 250, 40, 40, INK, 'left', '700');
+    this.text(lv.name.toUpperCase(), lv.chapter === 2 ? 290 : 250, 40, 40, INK, 'left', '700');
     this.text('“' + lv.client + '”', 40, 88, 25, DIM, 'left', '400');
     this.hit(30, 15, 600, 50, { type: 'board' });
 
@@ -432,8 +435,11 @@
     }
     this.text('Size ' + r.size + '  (par ' + lv.parSize + ')', W / 2 - 200, 550, 30, lean ? COL.cyan : INK, 'center', '600');
     this.text('Cycles ' + r.cycles + '  (par ' + lv.parCycles + ')', W / 2 + 200, 550, 30, fast ? COL.magenta : INK, 'center', '600');
-    this.text(lean && fast ? 'Both chips. Clean shift.' : 'Beat par on Size or Cycles for a bonus chip.', W / 2, 610, 24, DIM, 'center');
-    var last = lv.index === C.LEVELS.length - 1;
+    var tip = lean && fast ? 'Both chips. Clean shift.' : 'Beat par on Size or Cycles for a bonus chip.';
+    if (r.parts !== undefined) tip = 'Parts ' + r.parts + ' (par ' + lv.parParts + ')   ·   ' + tip;
+    this.text(tip, W / 2, 610, 24, DIM, 'center');
+    var all = game.constructor.LEVELS || C.LEVELS;
+    var last = lv.index === all.length - 1;
     this.button(last ? 'A  Contracts' : 'A  Next contract', W / 2 - 330, 680, 320, 76, GREEN, { type: 'next' }, true);
     this.button('B  Keep editing', W / 2 + 10, 680, 320, 76, INK, { type: 'close' });
   };
@@ -441,12 +447,23 @@
   Deck.prototype.drawBoard = function (game) {
     this.hits = [];
     this.panel(80, 70, W - 160, H - 140, COL.cyan);
-    this.text('NIGHT SHIFT  ·  CONTRACT BOARD', 140, 140, 40, COL.cyan, 'left', '700');
-    this.text('D-pad to pick, A to open, B to close', W - 210, 140, 22, DIM, 'right');
+    var all = game.constructor.LEVELS || C.LEVELS, per = 10;
+    var page = Math.floor(game.boardSel / per), pages = Math.ceil(all.length / per);
+    var titles = ['NIGHT SHIFT', 'JUNCTION FLOOR'];
+    this.text((titles[page] || 'CHAPTER ' + (page + 1)) + '  ·  CONTRACT BOARD', 140, 140, 40, COL.cyan, 'left', '700');
+    this.text('D-pad pick · A open · L1/R1 chapter · B close', W - 210, 140, 22, DIM, 'right');
+    for (var pg = 0; pg < pages; pg++) {
+      var tx = 140 + pg * 270, on = pg === page;
+      this.roundRect(tx, 930, 250, 56, 10);
+      this.g.fillStyle = on ? 'rgba(34,232,255,0.14)' : 'rgba(255,255,255,0.02)'; this.g.fill();
+      this.g.strokeStyle = on ? COL.cyan : FAINT; this.g.lineWidth = 2; this.g.stroke();
+      this.text('CHAPTER ' + (pg + 1), tx + 125, 958, 22, on ? COL.cyan : DIM, 'center', '600');
+      this.hit(tx, 930, 250, 56, { type: 'boardPage', i: pg * per });
+    }
     var cols = 5, cw = 300, ch = 300, gap = 30;
     var x0 = W / 2 - (cols * cw + (cols - 1) * gap) / 2;
-    for (var i = 0; i < C.LEVELS.length; i++) {
-      var lv = C.LEVELS[i], cx = x0 + (i % cols) * (cw + gap), cy = 210 + Math.floor(i / cols) * (ch + gap);
+    for (var i = page * per; i < Math.min(all.length, page * per + per); i++) {
+      var lv = all[i], j = i - page * per, cx = x0 + (j % cols) * (cw + gap), cy = 200 + Math.floor(j / cols) * (ch + gap);
       var unlocked = game.isUnlocked(i), sel = i === game.boardSel, cleared = !!game.save.cleared[lv.id];
       var best = game.save.best[lv.id];
       var col = !unlocked ? FAINT : cleared ? GREEN : COL.cyan;
@@ -454,7 +471,7 @@
       this.g.fillStyle = sel ? 'rgba(34,232,255,0.1)' : '#03070d'; this.g.fill();
       if (sel) this.glow(col === FAINT ? DIM : col, 22);
       this.g.strokeStyle = sel ? (col === FAINT ? DIM : col) : col; this.g.lineWidth = sel ? 4 : 2; this.g.stroke(); this.noGlow();
-      this.text(('0' + (i + 1)).slice(-2), cx + 24, cy + 40, 30, col === FAINT ? DIM : col, 'left', '700');
+      this.text(lv.chapter === 2 ? '2-' + ('0' + lv.num).slice(-2) : ('0' + (i + 1)).slice(-2), cx + 24, cy + 40, 30, col === FAINT ? DIM : col, 'left', '700');
       this.text(unlocked ? lv.name : 'LOCKED', cx + 24, cy + 90, 30, unlocked ? INK : DIM, 'left', '700');
       if (unlocked) {
         var words = lv.teaches.split(' '), lines = [''], k;

@@ -20,6 +20,10 @@ Retroid with the dual-screen add-on) and on ordinary single-screen phones.
 - **One screen:** with no second display the deck page shows the deck and editor side by side.
 
 Screens are found at runtime by role (`DISPLAY_CATEGORY_PRESENTATION`), never by a fixed display id.
+- **Updates:** `Updater` checks GitHub's latest release once per launch and, if it's newer, offers to
+  download its APK into a `PackageInstaller` session; `UpdateReceiver` opens Android's own install
+  screen. Both dialogs take touch or controller (d-pad, A, B). See "Updates inside the app" in the
+  top-level README.
 
 ## Build
 

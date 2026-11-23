@@ -1,6 +1,7 @@
 # Overshift CI: tests the game, builds the one-file browser build and the Android APK on every push.
 # Pushing a tag like v0.2.0, or running the workflow by hand with a version filled in, also publishes
-# a GitHub Release with the APK and the browser build attached.
+# a GitHub Release with the APK and the browser build attached. Installed apps offer that release as
+# an update; release builds need the OVERSHIFT_SIGNING_PASSWORD secret (README.md, "Signing key").
 name: Build
 
 on:
@@ -64,7 +65,22 @@ jobs:
     name: Build the Android APK
     needs: web
     runs-on: ubuntu-latest
+    env:
+      # vX.Y.Z when this run publishes a release (becomes the app's versionName and versionCode)
+      OVERSHIFT_VERSION: ${{ inputs.release || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || '' }}
+      # The one secret behind the app's fixed signing key (see "Signing key" in README.md)
+      OVERSHIFT_SIGNING_PASSWORD: ${{ secrets.OVERSHIFT_SIGNING_PASSWORD }}
     steps:
+      - name: Check the release version and signing secret
+        if: env.OVERSHIFT_VERSION != ''
+        run: |
+          if ! [[ "$OVERSHIFT_VERSION" =~ ^v[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
+            echo "::error::Release version must look like v1.2.3 (got $OVERSHIFT_VERSION)"; exit 1
+          fi
+          if [ -z "$OVERSHIFT_SIGNING_PASSWORD" ]; then
+            echo "::error::Add the OVERSHIFT_SIGNING_PASSWORD repository secret before releasing, or players can't update"; exit 1
+          fi
+
       - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v5
@@ -84,12 +100,32 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
-        working-directory: android
-        run: bash ./gradlew assembleDebug --no-daemon
+      - uses: actions/setup-python@v5
+        if: env.OVERSHIFT_SIGNING_PASSWORD != ''
+        with:
+          python-version: '3.12'
 
-      - name: Name the APK after the commit
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk overshift-${GITHUB_SHA::7}.apk
+      # Rebuilds the same signing key from the secret on every run; the key is never stored.
+      - name: Rebuild the signing key
+        if: env.OVERSHIFT_SIGNING_PASSWORD != ''
+        run: |
+          pip install --quiet cryptography==50.0.1
+          KS_PASS=$(openssl rand -hex 24)
+          echo "::add-mask::$KS_PASS"
+          echo "OVERSHIFT_KEYSTORE_PASSWORD=$KS_PASS" >> "$GITHUB_ENV"
+          echo "OVERSHIFT_KEYSTORE=$RUNNER_TEMP/overshift.p12" >> "$GITHUB_ENV"
+          OVERSHIFT_KEYSTORE_PASSWORD="$KS_PASS" python3 tools/signing-key.py "$RUNNER_TEMP/overshift.p12"
+
+      - name: Unit tests and debug APK
+        working-directory: android
+        run: bash ./gradlew testDebugUnitTest assembleDebug --no-daemon
+
+      - name: Name the APK after the release or the commit
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk "overshift-${OVERSHIFT_VERSION:-${GITHUB_SHA::7}}.apk"
+
+      - name: Forget the signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/overshift.p12"
 
       - uses: actions/upload-artifact@v4
         with:

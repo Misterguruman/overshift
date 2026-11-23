@@ -36,7 +36,8 @@ node test/browser-check.js /tmp/shots      # headless Chromium smoke test
 `.github/workflows/build.yml` runs on every push to `main` and every pull request:
 
 1. runs the headless tests, bundles `dist/overshift.html` and runs the browser smoke test;
-2. builds the Android APK, signed with a debug key, ready to sideload.
+2. runs the Android unit tests and builds the APK, signed with Overshift's fixed key (below), ready
+   to sideload.
 
 Download the results from the run's page under **Artifacts**: `overshift-apk` (the APK to sideload),
 `overshift-browser` (the one-file game) and `screenshots` (from the browser test).
@@ -44,7 +45,31 @@ Download the results from the run's page under **Artifacts**: `overshift-apk` (t
 To publish a release, open **Actions > Build > Run workflow** on GitHub, type a version like `v0.2.0`
 and run it (or push a version tag: `git tag v0.2.0 && git push origin v0.2.0`). The workflow then
 makes a GitHub Release with the APK and `overshift.html` attached, so the Thor can download the
-APK straight from the release page.
+APK straight from the release page. Release APKs are named after the version (`overshift-v0.4.0.apk`)
+and carry it as their versionName and versionCode, so each one installs over the last.
+
+## Updates inside the app
+
+When the app starts it reads this repository's latest release from the public GitHub API (no
+account or token, so the repository has to be public). If the release's tag is newer than the
+installed version, it offers to download the APK and hands it to Android's installer, which asks
+the player to confirm. Dev builds from plain pushes (versionName `dev-<commit>`) never ask, and no
+network just means no prompt. Code: `android/app/src/main/java/app/overshift/proto/Updater.kt`.
+
+## Signing key
+
+Android only installs an update over an app signed with the same key, so every CI build is signed
+with one fixed key. It is never stored anywhere: `tools/signing-key.py` rebuilds the same key and
+certificate on every run from one repository secret, **`OVERSHIFT_SIGNING_PASSWORD`**
+(Settings > Secrets and variables > Actions). The script's header says exactly how.
+
+- Set it once to a long random password (24+ characters, from a password manager) and never change
+  it: a new password means a new key, and every installed copy would need uninstalling once.
+- Releases refuse to build without it. Plain builds without it (pull requests from forks, local
+  builds) fall back to Gradle's debug key.
+- Apps signed with the old debug key (v0.1.0 to v0.3.0) must be uninstalled once before installing
+  the first release signed with the fixed key (each of those was signed with a different throwaway
+  key). Uninstalling deletes the app's saves; updates after that keep them.
 
 ## What's in this build
 

@@ -57,6 +57,7 @@ class MainActivity : Activity() {
         deck.loadUrl(GAME_URL)
         deck.requestFocus()
         hideSystemBars()
+        Updater(this).checkOnLaunch() // offers a newer GitHub release, if there is one
     }
 
     override fun onResume() {

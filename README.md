@@ -41,8 +41,9 @@ node test/browser-check.js /tmp/shots      # headless Chromium smoke test
 Download the results from the run's page under **Artifacts**: `overshift-apk` (the APK to sideload),
 `overshift-browser` (the one-file game) and `screenshots` (from the browser test).
 
-To publish a release, push a version tag: `git tag v0.1.0 && git push origin v0.1.0`. The workflow
-then makes a GitHub Release with the APK and `overshift.html` attached, so the Thor can download the
+To publish a release, open **Actions > Build > Run workflow** on GitHub, type a version like `v0.2.0`
+and run it (or push a version tag: `git tag v0.2.0 && git push origin v0.2.0`). The workflow then
+makes a GitHub Release with the APK and `overshift.html` attached, so the Thor can download the
 APK straight from the release page.
 
 ## What's in this build

@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Overshift</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  --bg: #000; --ink: #d7f6ff; --dim: #5b7590; --faint: #1b2a3d; --panel: #03070d;
+  --cyan: #22e8ff; --magenta: #ff3df0; --amber: #ffb31f; --lime: #a6ff3a;
+  --red: #ff3b5c; --green: #5dffa8; --violet: #9b7bff;
+  --mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--mono); overflow: hidden; }
+body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+#app { position: fixed; inset: 0; display: flex; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+
+/* ---- screen layouts ---- */
+.deck-wrap { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.deck-box { position: relative; width: 100%; flex: 1 1 auto; min-height: 0; }
+#deck { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: manipulation; }
+#editor { min-width: 0; min-height: 0; }
+.help { display: none; }
+
+.layout-deck .deck-wrap { flex: 1; }
+.layout-deck #editor { display: none; }
+.layout-editor .deck-wrap { display: none; }
+.layout-editor #editor { flex: 1; }
+
+/* one screen, landscape: deck left, editor right */
+.layout-both { flex-direction: row; }
+.layout-both .deck-wrap { flex: 0 0 62%; border-right: 1px solid var(--faint); }
+.layout-both .deck-box { flex: 0 0 auto; aspect-ratio: 16 / 9; max-height: 100%; }
+.layout-both .help { display: block; flex: 1 1 auto; overflow: auto; padding: 14px 18px; font-size: 13px; color: var(--dim); line-height: 1.55; }
+.layout-both #editor { flex: 1; }
+/* one screen, portrait: deck on top, editor below, like the Thor */
+@media (max-aspect-ratio: 5/4) {
+  .layout-both { flex-direction: column; }
+  .layout-both .deck-wrap { flex: 0 0 auto; border-right: 0; border-bottom: 1px solid var(--faint); }
+  .layout-both .help { display: none; }
+  .layout-both .deck-box { aspect-ratio: 16 / 9; width: 100%; max-height: 52vh; }
+}
+.help h2 { font-size: 13px; color: var(--cyan); margin: 0 0 6px; letter-spacing: .08em; font-weight: 600; }
+.help table { border-collapse: collapse; width: 100%; max-width: 760px; }
+.help td { padding: 2px 10px 2px 0; vertical-align: top; }
+.help td:first-child { color: var(--ink); white-space: nowrap; }
+.help .cols { display: flex; gap: 28px; flex-wrap: wrap; }
+.help .cols > div { flex: 1 1 260px; }
+.help p { margin: 0 0 10px; max-width: 760px; }
+
+/* ---- editor ---- */
+.ed { display: flex; flex-direction: column; height: 100%; background: #000; color: var(--ink); font-family: var(--mono); touch-action: manipulation; overflow: hidden; }
+.ed button { font: inherit; color: inherit; cursor: pointer; }
+.ed-head { display: flex; align-items: center; gap: .35em; padding: .3em .45em; border-bottom: 1px solid var(--faint); flex: 0 0 auto; }
+.ed-title { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ed-title b { color: var(--cyan); margin-right: .2em; }
+.ed-icon { min-width: 2.1em; height: 1.8em; background: transparent; border: 1px solid var(--faint); border-radius: .35em; padding: 0; }
+.ed-icon:disabled { opacity: .3; }
+.ed-snd.off { opacity: .35; text-decoration: line-through; }
+.ed-main { flex: 1 1 auto; display: flex; min-height: 0; }
+.ed-prog { flex: 1 1 66%; overflow-y: auto; padding: .2em 0 1em; touch-action: pan-y; min-width: 0; scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
+.ed-side { flex: 0 0 34%; display: flex; flex-direction: column; gap: .35em; padding: .35em; border-left: 1px solid var(--faint); min-width: 0; overflow: hidden; }
+.ed-size { font-size: .78em; color: var(--dim); white-space: nowrap; overflow: hidden; }
+.ed-size b { color: var(--ink); font-size: 1.15em; }
+.ed-size .bad { color: var(--red); }
+.ed-pal { display: grid; grid-template-columns: 1fr 1fr; gap: .28em; }
+.tile { font-size: .8em !important; padding: .32em 0; background: var(--panel); border: 1px solid var(--faint); border-radius: .35em; font-weight: 600; }
+.tile.k-flow { color: var(--violet) !important; }
+.tile.sel { border-color: var(--cyan); box-shadow: 0 0 .55em rgba(34,232,255,.45); }
+.ed-held { margin-top: auto; display: flex; align-items: center; gap: .4em; font-size: .8em; white-space: nowrap; }
+.ed-lbl { color: var(--dim); font-size: .85em; }
+.ed-dim { color: var(--dim); }
+.ed-empty { color: var(--dim); font-size: .8em; padding: .6em .8em; line-height: 1.4; }
+.hex { width: 2em; height: 1.75em; display: inline-flex; align-items: center; justify-content: center; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); background: var(--ink); color: #000; font-weight: 700; }
+.hex-empty { background: var(--faint); }
+.hex.c-cyan { background: var(--cyan); } .hex.c-magenta { background: var(--magenta); } .hex.c-amber { background: var(--amber); } .hex.c-lime { background: var(--lime); }
+.c-cyan-t { color: var(--cyan) !important; } .c-magenta-t { color: var(--magenta) !important; } .c-amber-t { color: var(--amber) !important; } .c-lime-t { color: var(--lime) !important; }
+
+.row { position: relative; display: flex; align-items: center; height: 1.8em; padding: 0 .3em 0 .2em; border-left: 3px solid transparent; }
+.row .ln { width: 1.9em; flex: 0 0 auto; color: #3c5570; font-size: .78em; }
+.row .code { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .op { font-weight: 700; }
+.row.k-flow .op { color: var(--violet); }
+.row-start { height: 1.4em; font-size: .85em; }
+.arg { display: inline-block; margin-left: .4em; padding: 0 .4em; border: 1px solid #2a3f57; border-radius: .3em; font-size: .9em; line-height: 1.35; }
+.row.cursor { background: #0b1828; border-left-color: var(--cyan); }
+.row.cursor::after { content: ""; position: absolute; left: 2.2em; right: .4em; bottom: -1px; border-bottom: 2px dashed rgba(34,232,255,.5); pointer-events: none; }
+.row.lit { background: rgba(34,232,255,.2); box-shadow: inset 0 0 0 1px var(--cyan); }
+.row.faulted { background: rgba(255,59,92,.25); box-shadow: inset 0 0 0 1px var(--red); }
+.row.err { color: #ff8da0; }
+.row.err .ln { color: var(--red); }
+.row.trace { box-shadow: inset 0 0 0 2px var(--violet); }
+.tools { display: flex; gap: .1em; flex: 0 0 auto; }
+.tools span { padding: 0 .28em; color: var(--dim); font-size: .8em; cursor: pointer; }
+.tools span[data-tool=del] { color: var(--red); }
+
+.ed-msg { flex: 0 0 auto; min-height: 1.6em; max-height: 2.9em; overflow: hidden; padding: .2em .55em; font-size: .74em; line-height: 1.3; color: var(--dim); border-top: 1px solid var(--faint); }
+.ed-msg.fault { color: var(--red); } .ed-msg.warn { color: var(--amber); } .ed-msg.ok { color: var(--green); }
+.ed-transport { flex: 0 0 auto; display: flex; gap: .3em; padding: .3em; }
+.ed-transport button { flex: 1; height: 2.7em; background: var(--panel); border: 1px solid var(--faint); border-radius: .45em; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0; }
+.ed-transport b { font-size: 1em; font-weight: 600; line-height: 1.1; }
+.ed-transport i { font-style: normal; font-size: .58em; color: var(--dim); }
+.ed-transport button:disabled { opacity: .3; }
+.ed-run { border-color: var(--cyan) !important; color: var(--cyan) !important; box-shadow: 0 0 .5em rgba(34,232,255,.25); }
+.ed[data-mode=run] .ed-run, .ed[data-mode=fast] .ed-run { border-color: var(--amber) !important; color: var(--amber) !important; }
+</style>
+</head>
+<body>
+<div id="app" class="layout-both">
+  <div class="deck-wrap">
+    <div class="deck-box"><canvas id="deck"></canvas></div>
+    <div class="help">
+      <p>Program <b>Servo</b> to fill each order ticket. Every action moves Servo to its station first: 1 cycle per station passed, plus 1 for the action. The contract clears only when the program fills the order for every intake stream, including hidden ones.</p>
+      <div class="cols">
+        <div>
+          <h2>KEYBOARD</h2>
+          <table>
+            <tr><td>↑ ↓</td><td>move the cursor</td></tr>
+            <tr><td>← → / C</td><td>change the value on the line</td></tr>
+            <tr><td>Z or Enter</td><td>add the palette pick below the cursor</td></tr>
+            <tr><td>hold Z + ↑ ↓</td><td>move the line (blocks move whole)</td></tr>
+            <tr><td>X / Backspace</td><td>delete the line, or stop a run</td></tr>
+            <tr><td>Q / E</td><td>palette pick (streams while running)</td></tr>
+            <tr><td>Space</td><td>run / pause (twice: fast), F fast</td></tr>
+            <tr><td>[ / ]</td><td>step back / step</td></tr>
+            <tr><td>R</td><td>reset the deck</td></tr>
+            <tr><td>V, Q+V</td><td>undo, redo (Ctrl+Z works too)</td></tr>
+            <tr><td>M</td><td>contract board</td></tr>
+            <tr><td>J / L, I</td><td>inspect shipped cells, trace-back</td></tr>
+            <tr><td>1-5, S</td><td>pick a stream, sound on/off</td></tr>
+          </table>
+        </div>
+        <div>
+          <h2>GAMEPAD</h2>
+          <table>
+            <tr><td>D-pad / stick</td><td>cursor; ← → change value</td></tr>
+            <tr><td>A</td><td>add the palette pick</td></tr>
+            <tr><td>hold A + ↑ ↓</td><td>move the line</td></tr>
+            <tr><td>B</td><td>delete line / stop</td></tr>
+            <tr><td>X</td><td>change value</td></tr>
+            <tr><td>Y, L1+Y</td><td>undo, redo</td></tr>
+            <tr><td>L1 / R1</td><td>palette (streams while running)</td></tr>
+            <tr><td>L2 / R2</td><td>step back / step (hold to scrub)</td></tr>
+            <tr><td>Start</td><td>run / pause, twice for fast</td></tr>
+            <tr><td>Select</td><td>reset</td></tr>
+            <tr><td>L3</td><td>contract board</td></tr>
+            <tr><td>right stick, R3</td><td>inspect, trace-back</td></tr>
+          </table>
+        </div>
+      </div>
+      <p style="margin-top:10px">Tap a shipped or scrapped cell on the deck to jump to the line that moved it. Swipe a line left to delete it.</p>
+    </div>
+  </div>
+  <div id="editor"></div>
+</div>
+<script src="js/core.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/input.js"></script>
+<script src="js/game.js"></script>
+<script src="js/deck.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

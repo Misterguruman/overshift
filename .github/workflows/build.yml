@@ -1,0 +1,110 @@
+# Overshift CI: tests the game, builds the one-file browser build and the Android APK on every push.
+# Pushing a tag like v0.2.0 also publishes a GitHub Release with the APK and the browser build attached.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Test and bundle the game
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install test tools
+        run: npm ci
+
+      - name: Headless game tests (every contract, every stream)
+        run: npm test
+
+      - name: Bundle the browser build
+        run: npm run build
+
+      - name: Browser smoke test (headless Chromium)
+        run: |
+          npx playwright install --with-deps chromium
+          npx http-server web -p 8765 -s -c-1 &
+          sleep 2
+          mkdir -p screenshots
+          node test/browser-check.js screenshots
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: overshift-browser
+          path: dist/overshift.html
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+
+  android:
+    name: Build the Android APK
+    needs: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Copy the game into the app's assets
+        run: node tools/build.js
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Name the APK after the commit
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk overshift-${GITHUB_SHA::7}.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: overshift-apk
+          path: overshift-*.apk
+
+  release:
+    name: Publish a release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [web, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/*.apk
+            out/overshift.html
+          generate_release_notes: true

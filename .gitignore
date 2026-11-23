@@ -1,0 +1,6 @@
+node_modules/
+dist/
+screenshots/
+# generated from web/ by `npm run build`
+android/app/src/main/assets/web/
+.DS_Store

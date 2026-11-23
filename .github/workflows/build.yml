@@ -18,9 +18,9 @@ jobs:
     name: Test and bundle the game
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -59,21 +59,22 @@ jobs:
     needs: web
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
       - name: Copy the game into the app's assets
         run: node tools/build.js
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
+      # the ubuntu runner already has the Android SDK with licenses accepted;
+      # Gradle downloads any missing platform or build tools itself
 
       - uses: gradle/actions/setup-gradle@v4
 

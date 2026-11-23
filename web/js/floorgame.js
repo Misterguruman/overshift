@@ -262,6 +262,9 @@
     if (b === 'L3') {
       if (phase !== 'down') return true;
       if (this.held.L1) { this.l1Used = true; this.overlay = 'board'; this.boardSel = this.level.index; return true; }
+      var under = this.floor.tiles[F.key(this.tc.x, this.tc.y)];
+      // from Build mode, L3 on a node opens that node's program
+      if (this.fmode === 'build' && under && under.k === 'node') { this.openNode(under.s); return true; }
       this.setFmode(this.fmode === 'build' ? 'program' : 'build');
       return true;
     }
@@ -373,7 +376,8 @@
       active: this.active,
       slots: lv.slots.map(function (s, i) {
         var pos = F.nodePos(fl, i);
-        return { label: s.label, t: s.t, name: F.NODE_TYPES[s.t].name, cap: s.cap, salvaged: s.salvaged, placed: placed.indexOf(i) >= 0, size: C.programSize(fl.progs[i] || []), mem: sim.mem[i], d: pos ? pos.d : -1 };
+        var outs = pos ? F.outputSides(fl.progs[i], s.t).map(function (side) { return F.sendDir(pos.d, side); }) : [];
+        return { label: s.label, t: s.t, name: F.NODE_TYPES[s.t].name, cap: s.cap, salvaged: s.salvaged, placed: placed.indexOf(i) >= 0, size: C.programSize(fl.progs[i] || []), mem: sim.mem[i], d: pos ? pos.d : -1, outs: outs, unset: !!pos && !outs.length };
       }),
       cell: sim.cell ? { c: sim.cell.c, q: sim.cell.q, x: sim.x, y: sim.y } : null,
       lineSlot: running ? sim.lineSlot : -1,

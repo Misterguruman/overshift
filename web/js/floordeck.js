@@ -67,16 +67,37 @@
 
   P.drawNodeTile = function (x, y, ts, slot, info, d, state) {
     var g = this.g, col = NODE_COL[slot.t] || INK, m = ts * 0.08;
+    var sides = F.outputSides(info.prog, slot.t), unset = !sides.length;
     this.roundRect(x + m, y + m, ts - 2 * m, ts - 2 * m, ts * 0.12);
     g.fillStyle = state.active ? 'rgba(255,255,255,0.08)' : '#060b13';
     g.fill();
     if (state.active || state.lit) this.glow(col, state.lit ? 26 : 16);
     g.strokeStyle = col; g.lineWidth = state.active ? 4 : 2.5;
+    if (unset) g.setLineDash([ts * 0.07, ts * 0.05]);
     g.stroke();
+    g.setLineDash([]);
     this.noGlow();
-    // facing: a notch on the front edge and a dim tab on the back (the only way in)
     var cx = x + ts / 2, cy = y + ts / 2;
-    this.arrowHead(cx + DX[d] * ts * 0.36, cy + DY[d] * ts * 0.36, d, ts * 0.09, col);
+    // outputs: an arrow on each side the program sends cells out of (none until it's programmed)
+    for (var k = 0; k < sides.length; k++) {
+      var od = F.sendDir(d, sides[k]);
+      g.strokeStyle = col; g.lineWidth = Math.max(2, ts * 0.035);
+      g.beginPath();
+      g.moveTo(cx + DX[od] * ts * 0.3, cy + DY[od] * ts * 0.3);
+      g.lineTo(cx + DX[od] * ts * 0.4, cy + DY[od] * ts * 0.4);
+      g.stroke();
+      this.glow(col, 8);
+      this.arrowHead(cx + DX[od] * ts * 0.44, cy + DY[od] * ts * 0.44, od, ts * 0.085, col);
+      this.noGlow();
+    }
+    if (unset) {
+      // not programmed yet: an amber "?" badge in the corner
+      var bx0 = x + ts - m - ts * 0.14, by0 = y + m + ts * 0.14;
+      g.fillStyle = '#05080e'; g.beginPath(); g.arc(bx0, by0, ts * 0.12, 0, 6.29); g.fill();
+      g.strokeStyle = COL.amber; g.lineWidth = 2.5; g.stroke();
+      this.text('?', bx0, by0 + 1, Math.round(ts * 0.17), COL.amber, 'center', '700');
+    }
+    // the back edge: a dim tab marks the only way in
     g.fillStyle = 'rgba(215,246,255,0.35)';
     var bx = cx - DX[d] * ts * 0.4, by = cy - DY[d] * ts * 0.4;
     var bw = DX[d] ? ts * 0.05 : ts * 0.34, bh = DX[d] ? ts * 0.34 : ts * 0.05;
@@ -84,7 +105,8 @@
     this.text(slot.label, cx, cy - ts * 0.08, Math.round(ts * 0.2), col, 'center', '700');
     var sub = F.NODE_TYPES[slot.t].name.toUpperCase();
     if (slot.t === 'counter') sub = 'COUNT ' + info.mem;
-    this.text(sub, cx, cy + ts * 0.17, Math.round(ts * 0.11), state.active ? INK : DIM, 'center', '600');
+    if (unset) sub = 'NOT SET';
+    this.text(sub, cx, cy + ts * 0.17, Math.round(ts * 0.11), unset ? COL.amber : state.active ? INK : DIM, 'center', '600');
   };
 
   P.drawFloorGrid = function (lv, game, geo) {
@@ -146,7 +168,7 @@
           this.text('BRG', cx, py + ts * 0.88, Math.round(ts * 0.11), VIOLET, 'center', '700');
         } else if (t.k === 'node') {
           var slot = lv.slots[t.s];
-          this.drawNodeTile(px, py, ts, slot, { mem: sim.mem[t.s] }, t.d, {
+          this.drawNodeTile(px, py, ts, slot, { mem: sim.mem[t.s], prog: fl.progs[t.s] }, t.d, {
             active: game.fmode === 'program' && game.active === t.s,
             lit: running && sim.node && sim.node.s === t.s
           });
@@ -193,6 +215,34 @@
       var cx = x + ts / 2, cy = y + ts / 2, d = game.facing;
       this.arrowHead(cx + DX[d] * ts * 0.56, cy + DY[d] * ts * 0.56, d, ts * 0.1, part.k === 'node' ? NODE_COL[part.t] : COL.cyan);
     }
+    // tooltip on a node that has no program yet; tapping it opens the node in Program mode
+    var t = game.floor.tiles[F.key(game.tc.x, game.tc.y)];
+    if (t && t.k === 'node' && !F.outputSides(game.floor.progs[t.s], lv.slots[t.s].t).length) this.drawProgramTip(lv, game, geo, t.s);
+  };
+
+  P.drawProgramTip = function (lv, game, geo, s) {
+    var g = this.g, ts = geo.ts, label = lv.slots[s].label;
+    var line1 = label + ' isn’t programmed', line2 = 'L3 or tap here to program it';
+    var bw = 440, bh = 92;
+    var nx = geo.x0 + (game.tc.x + 0.5) * ts, ny = geo.y0 + game.tc.y * ts;
+    var above = ny - bh - 18 >= 128;
+    var bx = Math.max(AREA.x, Math.min(AREA.x + AREA.w - bw, nx - bw / 2));
+    var by = above ? ny - bh - 16 : ny + ts + 16;
+    g.save();
+    this.roundRect(bx, by, bw, bh, 12);
+    g.fillStyle = 'rgba(8,12,20,0.96)'; g.fill();
+    this.glow(COL.amber, 14); g.strokeStyle = COL.amber; g.lineWidth = 2.5; g.stroke(); this.noGlow();
+    // pointer toward the node
+    var px = Math.max(bx + 24, Math.min(bx + bw - 24, nx));
+    g.fillStyle = COL.amber;
+    g.beginPath();
+    if (above) { g.moveTo(px - 12, by + bh); g.lineTo(px + 12, by + bh); g.lineTo(px, by + bh + 14); }
+    else { g.moveTo(px - 12, by); g.lineTo(px + 12, by); g.lineTo(px, by - 14); }
+    g.fill();
+    g.restore();
+    this.text('?  ' + line1, bx + 22, by + 30, 24, COL.amber, 'left', '700');
+    this.text(line2, bx + 22, by + 64, 21, INK, 'left', '500');
+    this.hit(bx, by, bw, bh, { type: 'tab', s: s });
   };
 
   // ---------- side panel ----------

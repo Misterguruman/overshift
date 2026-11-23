@@ -247,7 +247,14 @@
         if (t) {
           if (t.k === 'belt') { cls += ' m-belt'; txt = ARROWS[t.d]; }
           else if (t.k === 'bridge') { cls += ' m-bridge'; txt = '╋'; }
-          else if (t.k === 'node') { var sl = fl.slots[t.s]; cls += ' m-node ' + NODE_CLS[sl.t]; txt = '<span>' + esc(sl.label) + '</span><i>' + ARROWS[t.d] + '</i>'; }
+          else if (t.k === 'node') {
+            var sl = fl.slots[t.s];
+            cls += ' m-node ' + NODE_CLS[sl.t] + (sl.unset ? ' m-unset' : '');
+            txt = '<span>' + esc(sl.label) + '</span><b class="m-back m-back' + t.d + '"></b>';
+            // an arrow on each side the program sends out of; a "?" until it has a program
+            if (sl.unset) txt += '<i class="m-q">?</i>';
+            else sl.outs.forEach(function (od) { txt += '<i class="m-out m-out' + od + '">' + ARROWS[od] + '</i>'; });
+          }
         }
         if (fl.tc.x === x && fl.tc.y === y) cls += ' m-cur';
         if (fl.cell && fl.cell.x === x && fl.cell.y === y) cls += ' m-cell c-' + fl.cell.c + '-t';
@@ -262,6 +269,10 @@
       parts += '<button class="tile pt' + (p.k === 'node' ? ' ' + NODE_CLS[p.t] : '') + (p.k === 'remove' ? ' pt-rm' : '') + (i === fl.partIdx ? ' sel' : '') + '" data-part="' + i + '">' + esc(p.label) + left + '</button>';
     });
     parts += '<button class="tile pt" data-act="rotate">Turn ' + ARROWS[fl.facing] + '</button>';
+    var under = fl.tiles[fl.tc.x + ',' + fl.tc.y];
+    if (under && under.k === 'node' && fl.slots[under.s].unset) {
+      parts += '<button class="tile pt pt-tip" data-tab="' + under.s + '"><span>? ' + esc(fl.slots[under.s].label) + ' isn’t programmed</span><span>Tap to program it</span></button>';
+    }
     parts += '<div class="ed-dim pt-n">Parts ' + fl.parts_n + ' · par ' + fl.parParts + '</div>';
     parts += '<button class="tile pt pt-clr" data-act="clearFloor">Clear floor</button>';
     this.q.parts.innerHTML = parts;

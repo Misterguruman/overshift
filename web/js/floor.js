@@ -80,6 +80,20 @@
     return facing;
   }
 
+  /**
+   * Which sides a node can send a cell out of, from its program: a router's SEND sides,
+   * or 'ahead' for a tool with any program. Empty means the node is not programmed yet.
+   */
+  function outputSides(program, type) {
+    var out = [];
+    if (!program || !program.length) return out;
+    if (!NODE_TYPES[type].router) return ['ahead'];
+    for (var i = 0; i < program.length; i++) {
+      if (program[i].op === 'SEND' && out.indexOf(program[i].arg) < 0) out.push(program[i].arg);
+    }
+    return SEND_ARGS.filter(function (side) { return out.indexOf(side) >= 0; });
+  }
+
   /** Extra checks on top of the chapter 1 block matching: ops the node type can't run. */
   function compileNode(program, type) {
     var cm = C.compile(program);
@@ -779,6 +793,7 @@
     argLabel: argLabel,
     lineText: lineText,
     sendDir: sendDir,
+    outputSides: outputSides,
     compileNode: compileNode,
     key: key,
     fixedTile: fixedTile,

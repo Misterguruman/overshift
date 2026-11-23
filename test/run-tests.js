@@ -252,6 +252,13 @@ ok(F.compileNode(P('IF c=1; SEND left; END'), 'splitter').errors.length > 0, 'on
 ok(F.compileNode(P('PAINT cyan'), 'splitter').errors.length > 0, 'a Splitter cannot PAINT');
 ok(F.compileNode(P('IF c=1; SEND left; ELSE; TICK; SEND right; END'), 'counter').errors.length === 0, 'a Counter accepts count tests, TICK and SEND');
 
+// output arrows come from the program
+ok(F.outputSides([], 'splitter').length === 0, 'an empty Splitter has no outputs (shown as not programmed)');
+ok(F.outputSides(P('IF cyan; SEND right; ELSE; SEND left; END; SEND right'), 'splitter').join() === 'left,right', 'a Splitter shows an output for each side it SENDs to');
+ok(F.outputSides(P('IF c>3; SEND ahead; ELSE; TICK; END'), 'counter').join() === 'ahead', 'a Counter shows only its SEND sides');
+ok(F.outputSides(P('IF cyan; END'), 'splitter').length === 0, 'a Splitter with no SEND shows no outputs');
+ok(F.outputSides(P('PAINT cyan'), 'painter').join() === 'ahead' && !F.outputSides([], 'painter').length, 'a tool shows ahead once programmed');
+
 // ---------- the game host on chapter 2 ----------
 const N1 = C.LEVELS.length;
 g = new Game({ sfx: silent, skipBoard: true });
@@ -277,6 +284,15 @@ g.act({ type: 'btn', b: 'X', phase: 'up' });
 ok(g.buildParts()[g.partIdx].t === 'splitter' && g.facing === 0, 'hold X + right picks the next part');
 press(g, 'A');
 ok(g.floor.tiles['3,2'] && g.floor.tiles['3,2'].k === 'node' && g.active === 0, 'A places the Splitter and selects it');
+let vmU = g.viewModel().floor;
+ok(vmU.slots[0].unset && vmU.slots[0].outs.length === 0, 'a new Splitter is marked not programmed, with no output arrows');
+press(g, 'L3');
+ok(g.fmode === 'program' && g.active === 0, 'L3 with the cursor on a node opens its program');
+g.insert('SEND');
+vmU = g.viewModel().floor;
+ok(!vmU.slots[0].unset && vmU.slots[0].outs.join() === '3', 'SEND left on an east-facing Splitter shows a north arrow', vmU.slots[0].outs.join());
+press(g, 'Y'); press(g, 'L3');
+ok(g.fmode === 'build', 'L3 again goes back to Build');
 press(g, 'A');
 ok(Object.values(g.floor.tiles).filter(t => t.k === 'node').length === 1, 'a second A on the same tile does not add a node');
 press(g, 'down'); press(g, 'A');

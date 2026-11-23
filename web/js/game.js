@@ -346,6 +346,13 @@
   };
 
   // ---------- input ----------
+  Game.prototype.pickPalette = function (d) {
+    var n = this.level.palette.length;
+    if (!n) return;
+    this.paletteIdx = (this.paletteIdx + d + n) % n;
+    this.sfx.play('tick');
+  };
+
   Game.prototype.button = function (b, phase) {
     if (phase === 'down') this.held[b] = true;
     else if (phase === 'up') this.held[b] = false;
@@ -372,9 +379,9 @@
       return;
     }
 
-    // while the deck is actively running, editing buttons do nothing (cursor still moves)
+    // while the deck is actively running, editing buttons do nothing (cursor and palette still move)
     var live = this.mode === 'run' || this.mode === 'fast';
-    if (live && (b === 'left' || b === 'right' || b === 'X' || b === 'A' || b === 'Y')) return;
+    if (live && (b === 'X' || b === 'A' || b === 'Y')) return;
 
     switch (b) {
       case 'up': case 'down':
@@ -383,7 +390,8 @@
         else this.moveCursor(b === 'up' ? -1 : 1);
         return;
       case 'left': case 'right':
-        if (press) this.cycleArg(this.cursor, b === 'left' ? -1 : 1);
+        // D-pad / left stick left and right pick the operation in the palette
+        if (press) this.pickPalette(b === 'left' ? -1 : 1);
         return;
       case 'A':
         if (phase === 'down') { this.aMoved = false; this.aArmed = true; }
@@ -405,16 +413,17 @@
         if (this.held.L1) { this.l1Used = true; this.redo(); } else this.undo();
         return;
       case 'L1':
+        // L1 / R1 change the value on the cursor line (streams while running); L1 is also the redo modifier
         if (phase === 'down') this.l1Used = false;
         else if (phase === 'up' && !this.l1Used) {
           if (running) this.setStream(this.streamIdx - 1);
-          else this.paletteIdx = (this.paletteIdx + this.level.palette.length - 1) % this.level.palette.length;
+          else this.cycleArg(this.cursor, -1);
         }
         return;
       case 'R1':
         if (phase !== 'down') return;
         if (running) this.setStream(this.streamIdx + 1);
-        else this.paletteIdx = (this.paletteIdx + 1) % this.level.palette.length;
+        else this.cycleArg(this.cursor, 1);
         return;
       case 'L2': if (press) this.stepBack(); return;
       case 'R2': if (press) this.step(); return;

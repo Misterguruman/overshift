@@ -45,10 +45,10 @@ const base = process.argv[3] || 'http://127.0.0.1:8765/index.html';
   await page.waitForTimeout(300);
   await page.keyboard.press('KeyZ'); // open contract 1 from the board
   for (let k = 0; k < 3; k++) {
-    await page.keyboard.press('KeyQ'); await page.keyboard.press('KeyQ'); // back to GRAB (palette wraps)
+    await page.keyboard.press('ArrowLeft'); // back to GRAB (arrows pick the operation)
     await page.evaluate(() => { Overshift.game.paletteIdx = 0; });
     await page.keyboard.press('KeyZ');
-    await page.keyboard.press('KeyE');
+    await page.keyboard.press('ArrowRight');
     await page.keyboard.press('KeyZ');
   }
   const prog = await page.evaluate(() => Overshift.game.program.map(l => l.op).join(' '));

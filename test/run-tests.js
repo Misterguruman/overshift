@@ -92,7 +92,7 @@ g.selectLevel(0, true);
 ok(g.program.length === 0 && g.cursor === -1, 'level starts with an empty program');
 for (let k = 0; k < 3; k++) {
   g.paletteIdx = 0; press(g, 'A');      // GRAB
-  press(g, 'R1'); press(g, 'A');         // SHIP
+  press(g, 'right'); press(g, 'A');      // SHIP (d-pad right picks the next operation)
 }
 ok(C.lineText(g.program[5]) === 'SHIP' && g.program.length === 6, 'buttons build the Clock In program', g.program.map(C.lineText).join(','));
 press(g, 'start');
@@ -124,8 +124,16 @@ g.cursor = 1;
 g.act({ type: 'btn', b: 'A', phase: 'down' }); g.act({ type: 'btn', b: 'up', phase: 'down' }); g.act({ type: 'btn', b: 'up', phase: 'up' }); g.act({ type: 'btn', b: 'A', phase: 'up' });
 ok(g.program.map(l => l.op).join() === 'LOOP,CHARGE,END,GRAB' && g.cursor === 0, 'hold A + up moves the whole block (no insert)', g.program.map(l => l.op).join());
 const before = g.program[0].arg;
+press(g, 'R1');
+ok(g.program[0].arg !== before, 'R1 cycles the value on the cursor line');
+press(g, 'L1');
+ok(g.program[0].arg === before, 'L1 cycles the value back');
+const pal0 = g.paletteIdx, progBefore = JSON.stringify(g.program);
 press(g, 'right');
-ok(g.program[0].arg !== before, 'right cycles the value on the cursor line');
+ok(g.paletteIdx === (pal0 + 1) % g.level.palette.length && JSON.stringify(g.program) === progBefore, 'd-pad right picks the next operation and leaves the program alone');
+press(g, 'left'); press(g, 'left');
+ok(g.paletteIdx === (pal0 - 1 + g.level.palette.length) % g.level.palette.length, 'd-pad left picks the previous operation (wraps)');
+g.paletteIdx = pal0;
 g.cursor = 2; g.deleteLine();
 ok(g.program.length === 4 && /END/.test(g.flashMsg.msg + 'END'), 'deleting a matched END is refused');
 

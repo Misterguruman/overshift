@@ -58,6 +58,5 @@ APK straight from the release page.
 ## Differences from the design doc, for now
 
 - One autosaved program per contract instead of 3 save slots.
-- D-pad left/right changes the value on the cursor line (the doc has the cursor move onto the value).
 - L3 opens the contract board (the doc has it toggle the order ticket, which is always shown here).
 - No drag-to-insert, long-press menu, ambience pad, rain, haptics or narrow two-row deck layout yet.

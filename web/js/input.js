@@ -1,7 +1,7 @@
 /*
  * Overshift input: turns keyboard, Gamepad API and native (Android shell) buttons into
  * one stream of virtual button events: emit(button, 'down' | 'repeat' | 'up').
- * Buttons: up down left right A B X Y L1 R1 L2 R2 L3 R3 start select rsLeft rsRight
+ * Buttons: up down left right A B X Y L1 R1 L2 R2 L3 R3 start select rsLeft rsRight rsUp rsDown
  */
 (function (root) {
   'use strict';
@@ -10,13 +10,15 @@
   var PAD_BUTTONS = ['A', 'B', 'X', 'Y', 'L1', 'R1', 'L2', 'R2', 'select', 'start', 'L3', 'R3', 'up', 'down', 'left', 'right'];
   var REPEAT = {
     up: [320, 85], down: [320, 85], left: [320, 110], right: [320, 110],
-    L2: [260, 100], R2: [260, 100], rsLeft: [320, 140], rsRight: [320, 140]
+    L2: [260, 100], R2: [260, 100], rsLeft: [320, 140], rsRight: [320, 140],
+    rsUp: [320, 85], rsDown: [320, 85]
   };
   var KEYS = {
     ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
     KeyZ: 'A', Enter: 'A', KeyX: 'B', Backspace: 'B', Delete: 'B', KeyC: 'X', KeyV: 'Y',
     KeyQ: 'L1', KeyE: 'R1', BracketLeft: 'L2', BracketRight: 'R2', Space: 'start',
-    KeyR: 'select', KeyM: 'L3', Tab: 'L3', KeyI: 'R3', KeyJ: 'rsLeft', KeyL: 'rsRight'
+    KeyR: 'select', KeyM: 'L3', Tab: 'L3', KeyI: 'R3', KeyJ: 'rsLeft', KeyL: 'rsRight',
+    PageUp: 'rsUp', PageDown: 'rsDown'
   };
 
   function Input(emit) {
@@ -74,8 +76,12 @@
         if (ax[2] < -0.6) cur.rsLeft = true;
         if (ax[2] > 0.6) cur.rsRight = true;
       }
+      if (ax.length >= 4) {
+        if (ax[3] < -0.6) cur.rsUp = true;
+        if (ax[3] > 0.6) cur.rsDown = true;
+      }
     }
-    var names = PAD_BUTTONS.concat(['rsLeft', 'rsRight']);
+    var names = PAD_BUTTONS.concat(['rsLeft', 'rsRight', 'rsUp', 'rsDown']);
     for (var n = 0; n < names.length; n++) {
       var name = names[n], was = !!this.padPrev[name], is = !!cur[name];
       if (is !== was) this.set(name, is, now);

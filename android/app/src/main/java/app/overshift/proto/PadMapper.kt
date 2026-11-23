@@ -6,7 +6,7 @@ import android.view.MotionEvent
 
 /**
  * Turns Android controller events into the game's virtual buttons
- * (up down left right A B X Y L1 R1 L2 R2 L3 R3 start select rsLeft rsRight).
+ * (up down left right A B X Y L1 R1 L2 R2 L3 R3 start select rsLeft rsRight rsUp rsDown).
  * Sticks, the hat and analog triggers become digital buttons with thresholds,
  * and only changes are reported, through [emit] (button name, pressed).
  */
@@ -60,6 +60,7 @@ class PadMapper(private val emit: (String, Boolean) -> Unit) {
         val lx = event.getAxisValue(MotionEvent.AXIS_X)
         val ly = event.getAxisValue(MotionEvent.AXIS_Y)
         val rx = event.getAxisValue(MotionEvent.AXIS_Z)
+        val ry = event.getAxisValue(MotionEvent.AXIS_RZ)
         val lt = maxOf(event.getAxisValue(MotionEvent.AXIS_LTRIGGER), event.getAxisValue(MotionEvent.AXIS_BRAKE))
         val rt = maxOf(event.getAxisValue(MotionEvent.AXIS_RTRIGGER), event.getAxisValue(MotionEvent.AXIS_GAS))
 
@@ -73,6 +74,8 @@ class PadMapper(private val emit: (String, Boolean) -> Unit) {
         set("ls:right", lx > 0.55f, "right")
         set("rs:left", rx < -0.6f, "rsLeft")
         set("rs:right", rx > 0.6f, "rsRight")
+        set("rs:up", ry < -0.6f, "rsUp")
+        set("rs:down", ry > 0.6f, "rsDown")
         set("lt", lt > 0.5f, "L2")
         set("rt", rt > 0.5f, "R2")
         return true

@@ -137,6 +137,28 @@ ok(g.paletteIdx === (pal0 + 1) % g.level.palette.length && JSON.stringify(g.prog
 press(g, 'left'); press(g, 'left');
 ok(g.paletteIdx === (pal0 - 1 + g.level.palette.length) % g.level.palette.length, 'd-pad left picks the previous operation (wraps)');
 g.paletteIdx = pal0;
+// up / down jump a row in the two-column palette (Flatline: GRAB SHIP / SCRAP CHARGE / DRAIN LOOP / END)
+{
+  const h = new Game({ sfx: silent, skipBoard: true, unlockAll: true });
+  h.unlockAll = true;
+  h.selectLevel(7, true);
+  h.program = []; h.cursor = -1; h.afterEdit(); h.paletteIdx = 0;
+  const pal = () => h.curPalette()[h.paletteIdx];
+  press(h, 'down'); const a1 = pal(); press(h, 'down'); const a2 = pal();
+  ok(a1 === 'SCRAP' && a2 === 'DRAIN', 'd-pad down jumps a row: GRAB to SCRAP to DRAIN', a1 + ',' + a2);
+  press(h, 'down'); const a3 = pal(); press(h, 'down'); const a4 = pal();
+  ok(a3 === 'END' && a4 === 'GRAB', 'down wraps from the bottom row to the top', a3 + ',' + a4);
+  h.paletteIdx = 1; press(h, 'up'); const a5 = pal();
+  ok(a5 === 'LOOP', 'up from the top row wraps to the same column below, or the last tile', a5);
+  ok(h.program.length === 0, 'picking with up / down never edits the program');
+  h.insert('GRAB'); h.insert('SHIP'); h.insert('SCRAP');
+  press(h, 'rsUp');
+  ok(h.cursor === 1, 'right stick up moves the cursor a line');
+  press(h, 'rsDown'); press(h, 'rsDown');
+  ok(h.cursor === 2, 'right stick down moves the cursor and stops at the end');
+  h.act({ type: 'btn', b: 'A', phase: 'down' }); press(h, 'rsUp'); h.act({ type: 'btn', b: 'A', phase: 'up' });
+  ok(h.program.map(l => l.op).join() === 'GRAB,SCRAP,SHIP' && h.program.length === 3, 'hold A + right stick up moves the line without inserting');
+}
 g.cursor = 2; g.deleteLine();
 ok(g.program.length === 4 && /END/.test(g.flashMsg.msg + 'END'), 'deleting a matched END is refused');
 

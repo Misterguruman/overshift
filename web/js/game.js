@@ -5,6 +5,7 @@
  */
 (function (root) {
   'use strict';
+  var PALETTE_COLS = 2; // the editor draws the operation palette as a two-column grid (.ed-pal)
   var C = root.OvershiftCore;
   var F = root.OvershiftFloor || null;
   var LV = F ? F.ALL : C.LEVELS;
@@ -386,6 +387,19 @@
     this.paletteIdx = (this.paletteIdx + d + n) % n;
     this.sfx.play('tick');
   };
+  /** Up / down move a whole row in the palette grid, staying in the same column and wrapping. */
+  Game.prototype.pickPaletteRow = function (d) {
+    var n = this.curPalette().length, cols = PALETTE_COLS;
+    if (!n) return;
+    var i = Math.min(this.paletteIdx, n - 1), col = i % cols, rows = Math.ceil(n / cols);
+    var row = Math.floor(i / cols) + d;
+    if (row < 0) row = rows - 1;
+    if (row >= rows) row = 0;
+    var j = row * cols + col;
+    if (j >= n) j = d > 0 ? col : j - cols; // short last row: down wraps to the top, up lands one row higher
+    this.paletteIdx = j;
+    this.sfx.play('tick');
+  };
 
   Game.prototype.button = function (b, phase) {
     if (phase === 'down') this.held[b] = true;
@@ -422,13 +436,20 @@
 
     switch (b) {
       case 'up': case 'down':
+        // D-pad / left stick up and down move a row in the palette; hold A to move the cursor line instead
         if (!press) return;
         if (this.held.A && !live) { this.aMoved = true; this.moveLine(this.cursor, b === 'up' ? -1 : 1); }
-        else this.moveCursor(b === 'up' ? -1 : 1);
+        else this.pickPaletteRow(b === 'up' ? -1 : 1);
         return;
       case 'left': case 'right':
         // D-pad / left stick left and right pick the operation in the palette
         if (press) this.pickPalette(b === 'left' ? -1 : 1);
+        return;
+      case 'rsUp': case 'rsDown':
+        // right stick up and down move the cursor between program lines (hold A to move the line)
+        if (!press) return;
+        if (this.held.A && !live) { this.aMoved = true; this.moveLine(this.cursor, b === 'rsUp' ? -1 : 1); }
+        else this.moveCursor(b === 'rsUp' ? -1 : 1);
         return;
       case 'A':
         if (phase === 'down') { this.aMoved = false; this.aArmed = true; }

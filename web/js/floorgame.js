@@ -310,6 +310,8 @@
       case 'Y':
         if (live) return true;
         return false;
+      case 'rsUp': case 'rsDown':
+        return true; // the program cursor isn't shown while building
     }
     return false;
   };

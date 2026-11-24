@@ -158,8 +158,8 @@
       baseBoard.call(this, game);
       if (!game.tutorView || game.tipCard === undefined) return;
       var active = game.tutorActive();
-      this.button(active ? 'Y  Replay tutorial' : 'Y  Tutorial', 1260, 930, 320, 56, AMBER, { type: 'tutorial' });
-      this.button('X  Tips ' + (game.save.tipsOff ? 'off' : 'on'), 1600, 930, 220, 56, game.save.tipsOff ? DIM : INK, { type: 'tipsToggle' });
+      this.button(active ? 'Y  Replay tutorial' : 'Y  Tutorial', 1260, 852, 300, 52, AMBER, { type: 'tutorial' });
+      this.button('X  Tips ' + (game.save.tipsOff ? 'off' : 'on'), 1580, 852, 200, 52, game.save.tipsOff ? DIM : INK, { type: 'tipsToggle' });
     };
   }
 

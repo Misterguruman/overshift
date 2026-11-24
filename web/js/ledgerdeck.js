@@ -14,7 +14,7 @@
   var MAX_BAYS = LG.BAYS_START + LG.UPGRADES[0].costs.length;
 
   function byId(id) { var all = G.LEVELS; for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i]; return null; }
-  function code(lv) { return lv.kind === 'floor' ? '2-' + ('0' + lv.num).slice(-2) : ('0' + (lv.index + 1)).slice(-2); }
+  function code(lv) { return lv.code || (lv.kind === 'floor' ? '2-' + ('0' + lv.num).slice(-2) : ('0' + (lv.index + 1)).slice(-2)); }
   function ease(t) { t = Math.max(0, Math.min(1, t)); return 1 - Math.pow(1 - t, 3); }
 
   /** The LEDGER tab before the chapter tabs on the contract board, and the credits beside them. */
@@ -73,12 +73,13 @@
       }
       return;
     }
-    var col = lv ? (lv.kind === 'floor' ? AMBER : CYAN) : DIM;
+    var col = lv ? (lv.kind === 'floor' ? AMBER : lv.kind === 'truck' ? GREEN : CYAN) : DIM;
     var flick = lv ? 0.75 + 0.25 * Math.sin(t * 1.7 + i * 2.1) : 0.4;
     if (extra && extra.flicker) flick = Math.random() < 0.08 ? 0.35 : flick;
     this.roundRect(r.x, r.y, r.w, r.h, 10);
     g.fillStyle = lv ? 'rgba(34,232,255,' + (0.04 + 0.05 * flick) + ')' : '#03060b';
     if (lv && lv.kind === 'floor') g.fillStyle = 'rgba(255,179,31,' + (0.04 + 0.05 * flick) + ')';
+    if (lv && lv.kind === 'truck') g.fillStyle = 'rgba(93,255,168,' + (0.04 + 0.05 * flick) + ')';
     g.fill();
     if (lv) this.glow(col, 14 * flick);
     g.strokeStyle = sel ? INK : lv ? col : FAINT; g.lineWidth = sel ? 5 : 2.5;
@@ -121,6 +122,7 @@
   P.drawLedgerScene = function (game) {
     var L = game.save.ledger, cap = LG.bayCount(L);
     if (game.overlay === 'report' && game.report) { this.drawShiftReport(game); return; }
+    if (G.LEDGER_TABS[game.ledgerTab] === 'dispatch' && this.drawDispatchScene) { this.drawDispatchScene(game); return; }
     this.drawLedgerHeader('THE LEDGER', game, 'Cleared contracts earn in bays. Leaner and faster solutions earn more.');
     this.drawTower();
     var vmRows = game.ledgerRows(), sel = vmRows[game.ledgerSel];
@@ -137,6 +139,7 @@
   P.drawShiftReport = function (game) {
     var rep = game.report, L = game.save.ledger, k = ease(game.reportT / 2.4);
     var welcome = rep.kind === 'welcome';
+    var routes = rep.rows.filter(function (r) { return r.dispatch; })[0];
     var sub = welcome
       ? 'Your cleared contracts were paid for their first clears and chips, and the best of them are now earning.'
       : 'Away ' + LG.fmtDuration(rep.elapsed) + (rep.capped ? '. One shift pays ' + rep.shift + 'h; buy Shift length to cover more.' : '. Every bay ran the whole time.');
@@ -155,6 +158,7 @@
     var total = welcome ? rep.total : rep.total * k;
     this.text((welcome ? 'PAID  +' : 'EARNED  +') + LG.fmt(total) + ' cr', W / 2 - 400, 985, 38, GREEN, 'left', '700');
     this.text('A  Continue', W / 2 + 400, 985, 28, INK, 'right', '600');
+    if (routes) this.text('incl. city routes  +' + LG.fmt(routes.cr * k) + ' cr', W / 2, 1062, 20, GREEN, 'center', '600');
     this.hit(0, 0, W, H, { type: 'reportClose' });
   };
 })(typeof self !== 'undefined' ? self : this);

@@ -11,8 +11,14 @@
  *
  * Save data (inside the game's one save):
  *   save.runs[id]  = { size, cycles, parts? }   the best-earning clear of that contract
- *   save.ledger    = { v, credits, lifetime, bays: [id], up: { bays, overclock, shift },
- *                     lastSeen: ms, paid: { id: { c, l, f } } }
+ *   save.ledger    = { v, credits, lifetime, bays: [id], up: { bays, overclock, shift, fleet, bed },
+ *                     lastSeen: ms, paid: { id: { c, l, f } }, dispatch: { ok, rate, ... } | null }
+ *
+ * Dispatch (slice 2): once Night Audit is cleared, a fleet of trucks runs one route program on
+ * the city's live board. Bays turn their credits into cells (1 cr a cell on the deck, 2 cr on the
+ * floor) and trucks that deliver them earn a premium on top. The game measures one sample hour
+ * whenever the inputs change (dispatchgame.js) and stores the result in ledger.dispatch, so
+ * settling time away stays a pure sum here.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -26,6 +32,9 @@
   var SHIFT_HOURS = [8, 10, 12, 16, 24];
   var DECK_BASE = [20, 25, 30, 35, 40, 50, 55, 60, 65, 70]; // Night Shift, by contract
   var FIRST_CLEAR_HOURS = 4, CHIP_HOURS = 2;
+  var DISPATCH_AFTER = 'night-audit', DISPATCH_AFTER_NAME = 'Night Audit';
+  var BEDS = [12, 16, 24, 32];
+  var CELL_COLORS = ['cyan', 'magenta', 'amber', 'lime'];
 
   var UPGRADES = [
     { id: 'bays', name: 'Bays', what: 'Runs one more cleared contract at once',
@@ -33,7 +42,11 @@
     { id: 'overclock', name: 'Overclock', what: '+10% income on every bay',
       costs: [500, 1500, 4500, 13000, 40000] },
     { id: 'shift', name: 'Shift length', what: 'Pays more of your time away',
-      costs: [1000, 4000, 15000, 60000] }
+      costs: [1000, 4000, 15000, 60000] },
+    { id: 'fleet', name: 'Fleet', what: 'One more truck runs your city route', needs: DISPATCH_AFTER,
+      costs: [2000, 6000, 18000, 50000, 140000] },
+    { id: 'bed', name: 'Truck bed', what: 'Every truck carries more cells', needs: DISPATCH_AFTER,
+      costs: [1500, 6000, 24000] }
   ];
   var UP_BY_ID = {};
   UPGRADES.forEach(function (u) { UP_BY_ID[u.id] = u; });
@@ -41,9 +54,10 @@
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
   function num(v, d) { return typeof v === 'number' && isFinite(v) ? v : d; }
 
-  /** Base credits per hour for a contract: Night Shift 20 to 70, Junction Floor 90 to 180. */
+  /** Base credits per hour for a contract: Night Shift 20 to 70, Junction Floor 90 to 180, First Routes 195 to 300. */
   function baseRate(lv) {
     if (lv.kind === 'floor') return 80 + 10 * (lv.num || 1);
+    if (lv.kind === 'truck') return 180 + 15 * (lv.num || 1);
     return DECK_BASE[lv.index] !== undefined ? DECK_BASE[lv.index] : 20 + 5 * lv.index;
   }
 
@@ -71,7 +85,7 @@
   function rate(lv, run, oc) { return baseRate(lv) * factors(lv, run).mult * (1 + 0.1 * (oc || 0)); }
 
   function fresh(now) {
-    return { v: 1, credits: 0, lifetime: 0, bays: [], up: { bays: 0, overclock: 0, shift: 0 }, lastSeen: now, paid: {} };
+    return { v: 1, credits: 0, lifetime: 0, bays: [], up: { bays: 0, overclock: 0, shift: 0, fleet: 0, bed: 0 }, lastSeen: now, paid: {}, dispatch: null };
   }
 
   function index(levels) {
@@ -90,10 +104,40 @@
     return rate(lv, run, save.ledger.up.overclock);
   }
 
+  /** What the city routes earn per hour, from the last sample the game measured (0 if it faulted). */
+  function dispatchRate(L) { return L.dispatch && L.dispatch.ok ? Math.max(0, L.dispatch.rate || 0) : 0; }
+  function dispatchOpen(save) { return !!(save.cleared && save.cleared[DISPATCH_AFTER]); }
+  function fleetSize(L) { return 1 + (L.up.fleet || 0); }
+  function bedCap(L) { return BEDS[Math.min(L.up.bed || 0, BEDS.length - 1)]; }
+
+  /** The colour a contract's bay turns out: one per contract, so which bays run changes the mix. */
+  function bayColor(lv) { return CELL_COLORS[(lv.index || 0) % 4]; }
+
+  /**
+   * Cells per hour the bays feed the depot, by colour, and their spot price (cr a cell).
+   * A bay's credits are its cells at spot: 1 cr on the deck, 2 cr on the floor. Truck contracts make no cells.
+   */
+  function dispatchSupply(save, byId) {
+    var supply = {}, value = {}, spot = {}, b = save.ledger.bays;
+    CELL_COLORS.forEach(function (c) { supply[c] = 0; value[c] = 0; });
+    for (var i = 0; i < b.length; i++) {
+      var lv = byId[b[i]];
+      if (!lv || lv.kind === 'truck') continue;
+      var r = lineRate(save, byId, b[i]), price = lv.kind === 'floor' ? 2 : 1, c = bayColor(lv);
+      supply[c] += r / price;
+      value[c] += r;
+    }
+    CELL_COLORS.forEach(function (c) {
+      supply[c] = Math.round(supply[c] * 10) / 10;
+      spot[c] = supply[c] > 0 ? Math.round(value[c] / supply[c] * 100) / 100 : 1;
+    });
+    return { supply: supply, spot: spot };
+  }
+
   function totalRate(save, byId) {
     var t = 0, b = save.ledger.bays;
     for (var i = 0; i < b.length; i++) t += lineRate(save, byId, b[i]);
-    return t;
+    return t + dispatchRate(save.ledger);
   }
 
   function add(L, cr) { L.credits += cr; L.lifetime += cr; }
@@ -139,6 +183,8 @@
       L0.credits = num(L0.credits, 0); L0.lifetime = num(L0.lifetime, 0);
       L0.bays = Array.isArray(L0.bays) ? L0.bays : [];
       L0.up = L0.up || {}; L0.up.bays = L0.up.bays || 0; L0.up.overclock = L0.up.overclock || 0; L0.up.shift = L0.up.shift || 0;
+      L0.up.fleet = L0.up.fleet || 0; L0.up.bed = L0.up.bed || 0;
+      if (L0.dispatch === undefined) L0.dispatch = null;
       L0.paid = L0.paid || {};
       L0.lastSeen = num(L0.lastSeen, now);
       return false;
@@ -206,6 +252,8 @@
       out.bays.push({ id: L.bays[i], cr: cr });
       out.total += cr;
     }
+    var dr = dispatchRate(L);
+    if (dr > 0) { out.bays.push({ id: 'dispatch', cr: dr * hours }); out.total += dr * hours; }
     add(L, out.total);
     return out;
   }
@@ -224,12 +272,15 @@
     var next = lvl < max ? lvl + 1 : null;
     if (id === 'bays') return { now: BAYS_START + lvl + ' bays', next: next === null ? null : BAYS_START + next + ' bays' };
     if (id === 'overclock') return { now: '+' + lvl * 10 + '%', next: next === null ? null : '+' + next * 10 + '%' };
+    if (id === 'fleet') return { now: (1 + lvl) + (lvl ? ' trucks' : ' truck'), next: next === null ? null : (1 + next) + ' trucks' };
+    if (id === 'bed') return { now: BEDS[lvl] + ' cells a truck', next: next === null ? null : BEDS[next] + ' cells a truck' };
     return { now: SHIFT_HOURS[lvl] + 'h shift', next: next === null ? null : SHIFT_HOURS[next] + 'h shift' };
   }
 
   function buy(save, levels, id) {
     var L = save.ledger, cost = upgradeCost(L, id);
     if (cost === null) return { ok: false, msg: UP_BY_ID[id] ? UP_BY_ID[id].name + ' is at its top level.' : 'No such upgrade.' };
+    if (UP_BY_ID[id].needs && !(save.cleared && save.cleared[UP_BY_ID[id].needs])) return { ok: false, msg: UP_BY_ID[id].name + ' opens after you clear ' + DISPATCH_AFTER_NAME + '.' };
     if (L.credits + 1e-9 < cost) return { ok: false, msg: 'Needs ' + fmt(cost) + ' cr; you have ' + fmt(L.credits) + '.' };
     L.credits -= cost;
     L.up[id] = upgradeLevel(L, id) + 1;
@@ -270,6 +321,15 @@
     BAYS_START: BAYS_START,
     SHIFT_HOURS: SHIFT_HOURS,
     UPGRADES: UPGRADES,
+    BEDS: BEDS,
+    DISPATCH_AFTER: DISPATCH_AFTER,
+    DISPATCH_AFTER_NAME: DISPATCH_AFTER_NAME,
+    dispatchRate: dispatchRate,
+    dispatchOpen: dispatchOpen,
+    dispatchSupply: dispatchSupply,
+    bayColor: bayColor,
+    fleetSize: fleetSize,
+    bedCap: bedCap,
     FIRST_CLEAR_HOURS: FIRST_CLEAR_HOURS,
     CHIP_HOURS: CHIP_HOURS,
     baseRate: baseRate,

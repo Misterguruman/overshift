@@ -111,7 +111,7 @@ body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user
 
 /* ---- chapter 2: Junction Floor ---- */
 .ed-modes, .ed-build { display: none; }
-.ed-floor .ed-modes { display: flex; align-items: center; gap: .3em; padding: .25em .4em; border-bottom: 1px solid var(--faint); flex: 0 0 auto; overflow-x: auto; scrollbar-width: none; }
+.ed-truck .ed-modes, .ed-floor .ed-modes { display: flex; align-items: center; gap: .3em; padding: .25em .4em; border-bottom: 1px solid var(--faint); flex: 0 0 auto; overflow-x: auto; scrollbar-width: none; }
 .md { background: var(--panel); border: 1px solid var(--faint); border-radius: .35em; padding: .15em .6em; font-size: .8em !important; font-weight: 600; color: var(--dim) !important; }
 .md.on { border-color: var(--amber); color: var(--amber) !important; }
 .md[data-fmode=program].on { border-color: var(--cyan); color: var(--cyan) !important; }
@@ -172,6 +172,11 @@ body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user
 .lg-row.in .lg-bay { color: var(--green); }
 .lg-code { flex: 0 0 2.6em; color: var(--cyan); font-weight: 700; font-size: .85em; }
 .lg-code.fl { color: var(--amber); }
+.lg-code.tr { color: var(--green); }
+.lg-up.locked .lg-name { color: var(--dim); }
+.lg-city .lg-val b.ok { color: var(--green); }
+.lg-city .lg-val b.bad { color: var(--red, #ff3b5c); }
+.nt.tk { color: var(--cyan); }
 .lg-name { flex: 1 1 auto; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
 .lg-name i, .lg-val i { display: block; font-style: normal; font-weight: 500; font-size: .68em; color: var(--dim); overflow: hidden; text-overflow: ellipsis; }
 .lg-val { flex: 0 0 auto; text-align: right; font-weight: 700; color: var(--amber); position: relative; }
@@ -190,7 +195,7 @@ body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user
   <div class="deck-wrap">
     <div class="deck-box"><canvas id="deck"></canvas></div>
     <div class="help">
-      <p>Program <b>Servo</b> to fill each order ticket. Every action moves Servo to its station first: 1 cycle per station passed, plus 1 for the action. The contract clears only when the program fills the order for every intake stream, including hidden ones.</p>
+      <p id="help-lead">Program <b>Servo</b> to fill each order ticket. Every action moves Servo to its station first: 1 cycle per station passed, plus 1 for the action. The contract clears only when the program fills the order for every intake stream, including hidden ones.</p>
       <div class="cols">
         <div>
           <h2>KEYBOARD</h2>
@@ -235,21 +240,27 @@ body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user
       <p>Every cleared contract can run in a bay and earn credits, even while the game is closed (up to one shift, 8 hours to start). A solution at par earns the contract's base rate; fewer cycles and fewer lines earn more. The Ledger is the first page of the contract board: L1 / R1 flip pages (Q / E), or tap ₵. L2 / R2 or ← → switch between Bays and Upgrades, ↑ ↓ pick, A moves a contract in or out of a bay, Start opens it to improve it, hold A to buy an upgrade, B goes back to the board. Upgrades grow the business and never change a contract.</p>
       <h2 style="margin-top:12px">CHAPTER 2 · JUNCTION FLOOR</h2>
       <p>Build mode: the d-pad moves the tile cursor, hold X + ← → picks a part, tap X turns it, A places (hold A and move to draw a belt), B removes, Y undoes. Tap tiles on either screen to place. Program mode: the editor works as in chapter 1 on one node; L1 + ← → or a tab switches nodes. A belt takes cells from its back and sides; a node only from its back. A node shows an arrow on each side its program sends cells out of, and a ? until it has a program: put the cursor on it and press L3 (or tap the tip) to program it.</p>
+      <h2 style="margin-top:12px">CHAPTER 3 · FIRST ROUTES (DISPATCH)</h2>
+      <p>Opens after Night Audit. Program delivery trucks: a truck runs its program once per trip, starting at the depot with the order at the head of the board in hand. LOAD puts that order on the truck (depot only), NEXT takes the next order into hand, DRIVE goes to a district and drops everything loaded for it, DEFER sends an order you can't fill yet to the back of the board, WAIT idles. IF tests the order in hand: its district, colour, quantity, time left (due), SHORT (not enough stock) or FULL (won't fit). Every instruction takes 1 tick, DRIVE 1 plus the road, and a trip ends with the drive back to the depot. An order that arrives after its due tick is a fault. With two trucks, L1 + ← → or a tab switches trucks.</p>
+      <p>In the Ledger, the Dispatch tab runs one route program for your whole fleet on the city's live orders. Bays turn their credits into cells and on-time deliveries pay a premium on top (late ones half). Fleet and Truck bed in Upgrades add trucks and room. Demand changes every day.</p>
     </div>
   </div>
   <div id="editor"></div>
 </div>
 <script src="js/core.js"></script>
 <script src="js/floor.js"></script>
+<script src="js/dispatch.js"></script>
 <script src="js/ledger.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/input.js"></script>
 <script src="js/game.js"></script>
 <script src="js/floorgame.js"></script>
 <script src="js/ledgergame.js"></script>
+<script src="js/dispatchgame.js"></script>
 <script src="js/deck.js"></script>
 <script src="js/floordeck.js"></script>
 <script src="js/ledgerdeck.js"></script>
+<script src="js/dispatchdeck.js"></script>
 <script src="js/editor.js"></script>
 <script src="js/main.js"></script>
 </body>

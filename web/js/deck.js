@@ -157,6 +157,7 @@
     }
     this.drawHeader(lv, game);
     if (game.isFloor && game.isFloor() && this.drawFloorScene) this.drawFloorScene(dt);
+    else if (game.isTruck && game.isTruck() && this.drawTruckScene) this.drawTruckScene(dt);
     else {
       this.drawRail(lv, sim, dt);
       this.drawBelts(lv, sim, game);
@@ -205,13 +206,19 @@
     g.fillStyle = 'rgba(0,0,0,0.85)';
     g.fillRect(0, 0, W, 118);
     g.strokeStyle = FAINT; g.beginPath(); g.moveTo(0, 118); g.lineTo(W, 118); g.stroke();
-    var label = 'CONTRACT ' + (lv.chapter === 2 ? '2-' + ('0' + lv.num).slice(-2) : ('0' + (lv.index + 1)).slice(-2));
+    var label = lv.city ? 'LEDGER ROUTE' : 'CONTRACT ' + (lv.code || (lv.chapter === 2 ? '2-' + ('0' + lv.num).slice(-2) : ('0' + (lv.index + 1)).slice(-2)));
     this.glow(COL.cyan, 14);
     this.text(label, 40, 40, 26, COL.cyan, 'left', '600');
     this.noGlow();
-    this.text(lv.name.toUpperCase(), lv.chapter === 2 ? 290 : 250, 40, 40, INK, 'left', '700');
+    this.text(lv.name.toUpperCase(), lv.city ? 270 : lv.chapter >= 2 ? 290 : 250, 40, 40, INK, 'left', '700');
     this.text('“' + lv.client + '”', 40, 88, 25, DIM, 'left', '400');
     this.hit(30, 15, 600, 50, { type: 'board' });
+    if (lv.city) {
+      this.text('SAMPLE HOUR', W - 40, 40, 24, COL.amber, 'right', '600');
+      this.text('TICK', W - 40, 92, 20, DIM, 'right', '500');
+      this.text(game.sim.now + ' / ' + (lv.ticks || 0), W - 100, 92, 30, INK, 'right', '700');
+      return;
+    }
 
     // stream tabs
     var n = game.revealed, tw = 150, gap = 10, x = W - 40 - n * tw - (n - 1) * gap;
@@ -455,7 +462,7 @@
     this.panel(80, 70, W - 160, H - 140, COL.cyan);
     var all = game.constructor.LEVELS || C.LEVELS, per = 10;
     var page = Math.floor(game.boardSel / per), pages = Math.ceil(all.length / per);
-    var titles = ['NIGHT SHIFT', 'JUNCTION FLOOR'];
+    var titles = ['NIGHT SHIFT', 'JUNCTION FLOOR', 'FIRST ROUTES'];
     this.text((titles[page] || 'CHAPTER ' + (page + 1)) + '  ·  CONTRACT BOARD', 140, 140, 40, COL.cyan, 'left', '700');
     this.text('D-pad pick · A open · L1/R1 page · B close', W - 210, 140, 22, DIM, 'right');
     var tab0 = 140;
@@ -479,7 +486,7 @@
       this.g.fillStyle = sel ? 'rgba(34,232,255,0.1)' : '#03070d'; this.g.fill();
       if (sel) this.glow(col === FAINT ? DIM : col, 22);
       this.g.strokeStyle = sel ? (col === FAINT ? DIM : col) : col; this.g.lineWidth = sel ? 4 : 2; this.g.stroke(); this.noGlow();
-      this.text(lv.chapter === 2 ? '2-' + ('0' + lv.num).slice(-2) : ('0' + (i + 1)).slice(-2), cx + 24, cy + 40, 30, col === FAINT ? DIM : col, 'left', '700');
+      this.text(lv.code || (lv.chapter === 2 ? '2-' + ('0' + lv.num).slice(-2) : ('0' + (i + 1)).slice(-2)), cx + 24, cy + 40, 30, col === FAINT ? DIM : col, 'left', '700');
       this.text(unlocked ? lv.name : 'LOCKED', cx + 24, cy + 90, 30, unlocked ? INK : DIM, 'left', '700');
       if (unlocked) {
         var words = lv.teaches.split(' '), lines = [''], k;

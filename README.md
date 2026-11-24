@@ -14,6 +14,8 @@ The deck runs on the top screen; you write Servo's program on the bottom screen.
 - `web/js/game.js` the game host: editing, running, step back, scoring, saves, button handling
 - `web/js/ledger.js` the Ledger's rules: bay earnings, time-away pay, upgrades, save migration (pure);
   `ledgergame.js` its host logic and buttons; `ledgerdeck.js` its top-screen tower and Shift report
+- `web/js/dispatch.js` Dispatch's rules: trucks, orders, stock, chapter 3 contracts and the city
+  routes sample hour (pure); `dispatchgame.js` its host logic; `dispatchdeck.js` its map and Ledger tab
 - `tools/curve.js` (`npm run curve`) prints the Ledger's economy curve from the real contract data
 - `web/js/deck.js` the top-screen canvas view; `editor.js` the bottom-screen editor; `input.js`
   keyboard, Gamepad API and shell buttons; `audio.js` synthesized sound; `main.js` screen roles and transport
@@ -89,12 +91,19 @@ certificate on every run from one repository secret, **`OVERSHIFT_SIGNING_PASSWO
   after more than 5 minutes; a clock moved backwards pays nothing. Upgrades: Bays (3 to 12),
   Overclock (+10% a level) and Shift length (8 to 24 hours). No upgrade changes a contract.
   Older saves are migrated on first load: clears and chips earned so far are paid once.
+- Dispatch (business layer, slice 2), opens after Night Audit: chapter 3, First Routes, is 8 truck
+  contracts (3-01 to 3-08) with the instructions LOAD, NEXT, DRIVE, DEFER, WAIT, LOOP and IF. Each
+  truck runs its program once per trip from the depot with the head order in hand; late counts as a
+  fault. 3-07 and 3-08 have two trucks (L1 + left/right or the tabs switch). The Ledger's Dispatch
+  tab holds one city route: your bays' cells, sold to the city in a sample hour of today's orders,
+  pay twice spot on time and half spot late. Fleet (1 to 6 trucks) and Truck bed (12 to 32 cells)
+  upgrades. Money never touches a scored contract.
 
 ## Differences from the design doc, for now
 
 - One autosaved program per contract instead of 3 save slots.
 - With one save slot, a bay runs the best-earning clear of its contract, kept when you clear it.
-- The Ledger has the Bays and Upgrades tabs only; Dispatch, trucks, requisitions and tier unlocks
+- The Ledger has Bays, Upgrades and Dispatch; warehouse racks, requisitions and tier unlocks
   come in later slices. Bay windows show a moving belt, not a replay of your solution.
 - L3 opens the contract board (the doc has it toggle the order ticket, which is always shown here).
 - No drag-to-insert, long-press menu, ambience pad, rain, haptics or narrow two-row deck layout yet.

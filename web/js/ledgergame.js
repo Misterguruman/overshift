@@ -8,18 +8,26 @@
  */
 (function (root) {
   'use strict';
-  var G = root.OvershiftGame, LG = root.OvershiftLedger, C = root.OvershiftCore, F = root.OvershiftFloor;
+  var G = root.OvershiftGame, LG = root.OvershiftLedger, C = root.OvershiftCore, F = root.OvershiftFloor, D = root.OvershiftDispatch;
   if (!G || !LG) return;
   var P = G.prototype, LV = G.LEVELS, PER = G.PER_CHAPTER;
   var HOLD_TO_BUY = 0.5, SETTLE_EVERY = 1, PERSIST_EVERY = 15;
-  var TABS = ['bays', 'upgrades'];
+  var TABS = D ? ['bays', 'upgrades', 'dispatch'] : ['bays', 'upgrades'];
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function levelIndex(id) { for (var i = 0; i < LV.length; i++) if (LV[i].id === id) return i; return -1; }
-  function code(lv) { return lv.kind === 'floor' ? '2-' + ('0' + lv.num).slice(-2) : ('0' + (lv.index + 1)).slice(-2); }
+  function code(lv) { return lv.kind === 'truck' ? lv.code : lv.kind === 'floor' ? '2-' + ('0' + lv.num).slice(-2) : ('0' + (lv.index + 1)).slice(-2); }
 
   /** Re-score a contract's saved program (or floor); null if it doesn't clear any more. */
   function runFor(lv, save) {
+    if (lv.kind === 'truck') {
+      var r = save.routes && save.routes[lv.id];
+      if (!D || !Array.isArray(r)) return null;
+      var progs = [];
+      for (var k = 0; k < lv.trucks; k++) progs.push(Array.isArray(r[k]) ? r[k] : []);
+      var de = D.evaluate(lv, progs);
+      return de.cleared ? { size: de.size, cycles: de.cycles } : null;
+    }
     if (lv.kind === 'floor') {
       if (!F || !save.floors || !save.floors[lv.id]) return null;
       var f = clone(save.floors[lv.id]);
@@ -49,6 +57,7 @@
     this.ledgerPaused = false;
     var save = this.save, hadLedger = !!(save.ledger && save.ledger.v);
     LG.migrate(save, LV, function (lv) { return runFor(lv, save); }, this.now());
+    if (this.dispatchRefresh) this.dispatchRefresh();
     if (!hadLedger) {
       this.persist();
       // an existing save: say what the Ledger paid for work already done
@@ -95,6 +104,8 @@
     if (this.ledgerAcc >= SETTLE_EVERY) {
       this.ledgerAcc = 0;
       var before = Math.floor(L.credits), overlay = this.overlay;
+      // a new day (or anything else the city depends on) re-measures the route before paying
+      if (this.dispatchRefresh && this.dispatchRefresh()) dirty = true;
       this.ledgerSettle();
       if (this.overlay !== overlay || (overlay === 'ledger' && Math.floor(L.credits) !== before)) dirty = true;
     }
@@ -123,12 +134,19 @@
 
   // ---------- overlays ----------
   P.showReport = function (r) {
-    var rows = r.bays.map(function (b) { var lv = LV[levelIndex(b.id)]; return { code: code(lv), name: lv.name, floor: lv.kind === 'floor', cr: b.cr }; });
+    var rows = r.bays.map(function (b) {
+      if (b.id === 'dispatch') return { code: 'R', name: 'City routes', dispatch: true, cr: b.cr };
+      var lv = LV[levelIndex(b.id)];
+      return { code: code(lv), name: lv.name, floor: lv.kind === 'floor', truck: lv.kind === 'truck', cr: b.cr };
+    });
     if (this.overlay === 'report' && this.report && this.report.kind === 'away') {
       // still on the report: add to it rather than stack another
       var rep = this.report;
       rep.total += r.total; rep.paidMs += r.paidMs; rep.elapsed += r.elapsed; rep.capped = rep.capped || r.capped;
-      rows.forEach(function (x, k) { if (rep.rows[k] && rep.rows[k].code === x.code) rep.rows[k].cr += x.cr; });
+      rows.forEach(function (x) {
+        for (var k = 0; k < rep.rows.length; k++) if (rep.rows[k].code === x.code) { rep.rows[k].cr += x.cr; return; }
+        rep.rows.push(x);
+      });
       return;
     }
     this.reportReturn = this.overlay;
@@ -140,7 +158,7 @@
 
   P.showWelcome = function () {
     var save = this.save, L = save.ledger, byId = LG.index(LV);
-    var rows = L.bays.map(function (id) { var lv = byId[id]; return { code: code(lv), name: lv.name, floor: lv.kind === 'floor', rate: LG.lineRate(save, byId, id) }; });
+    var rows = L.bays.map(function (id) { var lv = byId[id]; return { code: code(lv), name: lv.name, floor: lv.kind === 'floor', truck: lv.kind === 'truck', rate: LG.lineRate(save, byId, id) }; });
     this.reportReturn = this.overlay;
     this.overlay = 'report';
     this.reportT = 0;
@@ -177,16 +195,18 @@
     if (TABS[this.ledgerTab] === 'upgrades') {
       return LG.UPGRADES.map(function (u) {
         var eff = LG.upgradeEffect(L, u.id), cost = LG.upgradeCost(L, u.id);
-        return { id: u.id, name: u.name, what: u.what, level: LG.upgradeLevel(L, u.id), max: u.costs.length, now: eff.now, next: eff.next, cost: cost, afford: cost !== null && L.credits + 1e-9 >= cost };
+        var locked = !!u.needs && !(save.cleared && save.cleared[u.needs]);
+        return { id: u.id, name: u.name, what: u.what, level: LG.upgradeLevel(L, u.id), max: u.costs.length, now: eff.now, next: eff.next, cost: cost, locked: locked, afford: !locked && cost !== null && L.credits + 1e-9 >= cost };
       });
     }
+    if (TABS[this.ledgerTab] === 'dispatch') return [{ id: 'city', name: 'City route' }];
     var rows = [];
     for (var i = 0; i < LV.length; i++) {
       var lv = LV[i], run = save.runs[lv.id];
       if (!run) continue;
       var f = LG.factors(lv, run);
       rows.push({
-        id: lv.id, code: code(lv), name: lv.name, floor: lv.kind === 'floor',
+        id: lv.id, code: code(lv), name: lv.name, floor: lv.kind === 'floor', truck: lv.kind === 'truck',
         rate: LG.rate(lv, run, L.up.overclock), base: LG.baseRate(lv),
         speed: f.speed, lean: f.lean, tidy: lv.kind === 'floor' ? f.tidy : null,
         bay: L.bays.indexOf(lv.id)
@@ -216,11 +236,13 @@
     if (!r.ok) { this.flash(r.msg, 'warn'); this.sfx.play('deny'); return; }
     this.flash(row.name + (r.inBay ? ' is running in a bay.' : ' left its bay.'), 'info');
     this.sfx.play(r.inBay ? 'place' : 'delete');
+    if (this.dispatchRefresh) this.dispatchRefresh();
     this.persist();
   };
 
   P.ledgerOpen = function (i) {
     var row = this.ledgerRows()[i === undefined ? this.ledgerSel : i];
+    if (TABS[this.ledgerTab] === 'dispatch') { if (this.openCity) this.openCity(); return; }
     if (!row || TABS[this.ledgerTab] !== 'bays') return;
     this.selectLevel(levelIndex(row.id));
   };
@@ -231,6 +253,7 @@
     if (!row) return;
     this.ledgerSel = i;
     if (row.cost === null) { this.flash(row.name + ' is at its top level.', 'info'); this.sfx.play('deny'); return; }
+    if (row.locked) { this.flash(row.name + ' opens after you clear ' + LG.DISPATCH_AFTER_NAME + '.', 'warn'); this.sfx.play('deny'); return; }
     if (!row.afford) { this.flash(row.name + ' needs ' + LG.fmt(row.cost) + ' cr; you have ' + LG.fmt(this.save.ledger.credits) + '.', 'warn'); this.sfx.play('deny'); return; }
     this.buyHold = { i: i, t: 0 };
   };
@@ -242,6 +265,7 @@
     var r = LG.buy(this.save, LV, row.id);
     if (!r.ok) { this.flash(r.msg, 'warn'); this.sfx.play('deny'); return; }
     var eff = LG.upgradeEffect(this.save.ledger, row.id);
+    if (this.dispatchRefresh) this.dispatchRefresh();
     this.flash('Bought ' + row.name + ': now ' + eff.now + '.' + (r.filled.length ? ' A cleared contract moved into the new bay.' : ''), 'ok');
     this.sfx.play('clear');
     this.persist();
@@ -266,7 +290,8 @@
       case 'right': case 'R2': if (phase === 'down') this.setLedgerTab(this.ledgerTab + 1); return;
       case 'L1': case 'R1': if (phase === 'down') this.flipBoardPage(b === 'L1' ? -1 : 1); return;
       case 'A':
-        if (tab === 'bays') { if (phase === 'down') this.ledgerToggle(); }
+        if (tab === 'dispatch') { if (phase === 'down') this.ledgerOpen(); }
+        else if (tab === 'bays') { if (phase === 'down') this.ledgerToggle(); }
         else if (phase === 'down') this.startHold(this.ledgerSel);
         else if (phase === 'up') this.endHold();
         return;
@@ -284,7 +309,8 @@
       case 'lrow': {
         var again = a.i === this.ledgerSel;
         this.ledgerSel = a.i; this.clampLedgerSel();
-        if (again && TABS[this.ledgerTab] === 'bays') this.ledgerToggle(a.i);
+        if (TABS[this.ledgerTab] === 'dispatch') this.ledgerOpen();
+        else if (again && TABS[this.ledgerTab] === 'bays') this.ledgerToggle(a.i);
         else this.sfx.play('tick');
         return true;
       }
@@ -300,6 +326,7 @@
     var L = this.save.ledger;
     var vm = {
       tab: TABS[this.ledgerTab],
+      tabs: TABS,
       sel: this.ledgerSel,
       credits: Math.floor(L.credits),
       rate: Math.round(this.ledgerRate()),
@@ -310,6 +337,7 @@
       rows: this.ledgerRows()
     };
     if (this.overlay === 'report' && this.report) vm.report = this.report;
+    if (vm.tab === 'dispatch' && this.dispatchSummary) vm.dispatch = this.dispatchSummary();
     return vm;
   };
 

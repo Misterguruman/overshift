@@ -8,7 +8,8 @@
   var PALETTE_COLS = 2; // the editor draws the operation palette as a two-column grid (.ed-pal)
   var C = root.OvershiftCore;
   var F = root.OvershiftFloor || null;
-  var LV = F ? F.ALL : C.LEVELS;
+  var D = root.OvershiftDispatch || null;
+  var LV = (F ? F.ALL : C.LEVELS).concat(D ? D.LEVELS : []);
   var PER_CHAPTER = 10;
   var SAVE_KEY = 'overshift.save.v1';
   var RUN_INTERVAL = 0.42, FAST_INTERVAL = 0.06, HISTORY_CAP = 4000;
@@ -18,11 +19,11 @@
       var raw = root.localStorage && root.localStorage.getItem(SAVE_KEY);
       if (raw) {
         var s = JSON.parse(raw);
-        s.cleared = s.cleared || {}; s.best = s.best || {}; s.programs = s.programs || {}; s.floors = s.floors || {};
+        s.cleared = s.cleared || {}; s.best = s.best || {}; s.programs = s.programs || {}; s.floors = s.floors || {}; s.routes = s.routes || {};
         return s;
       }
     } catch (e) { /* storage unavailable */ }
-    return { current: 0, cleared: {}, best: {}, programs: {}, floors: {} };
+    return { current: 0, cleared: {}, best: {}, programs: {}, floors: {}, routes: {} };
   }
 
   function Game(opts) {
@@ -67,13 +68,16 @@
   Game.LEVELS = LV;
   Game.PER_CHAPTER = PER_CHAPTER;
   Game.prototype.isFloor = function () { return this.level.kind === 'floor'; };
+  Game.prototype.isTruck = function () { return this.level.kind === 'truck'; };
 
   Game.prototype.selectLevel = function (i, initial) {
     if (!this.isUnlocked(i)) { this.flash('Clear ' + LV[i - 1].name + ' to open this one.', 'warn'); return; }
     this.level = LV[i];
     this.save.current = i;
     this.paletteIdx = 0;
+    this.cityOpts = null;
     if (this.isFloor()) this.setupFloor();
+    else if (this.isTruck()) this.setupTruck();
     else {
       var saved = this.save.programs[this.level.id];
       this.program = saved ? JSON.parse(JSON.stringify(saved)) : [];
@@ -93,6 +97,7 @@
   // ---------- program editing ----------
   Game.prototype.recompile = function () {
     if (this.isFloor()) { this.recompileFloor(); return; }
+    if (this.isTruck()) { this.recompileTruck(); return; }
     this.compiled = C.compile(this.program, this.level);
     this.ctx = { level: this.level, program: this.program, compiled: this.compiled, order: C.orderFor(this.level, this.streamIdx) };
   };
@@ -100,17 +105,19 @@
   // ---------- editing helpers shared by both chapters ----------
   Game.prototype.curPalette = function () { return this.isFloor() ? this.nodePalette() : this.level.palette; };
   Game.prototype.curLimit = function () { return this.isFloor() ? this.nodeCap() : this.level.limit; };
-  Game.prototype.argOpts = function (op) { return this.isFloor() ? F.argOptions(op, this.activeType()) : C.argOptions(op); };
-  Game.prototype.argNext = function (op, arg, dir) { return this.isFloor() ? F.cycleArg(op, this.activeType(), arg, dir) : C.cycleArg(op, arg, dir); };
-  Game.prototype.argDefault = function (op) { return this.isFloor() ? F.defaultArg(op, this.activeType()) : C.defaultArg(op); };
-  Game.prototype.argText = function (line) { return this.isFloor() ? F.argLabel(line.op, line.arg) : C.argLabel(line.op, line.arg); };
+  Game.prototype.argOpts = function (op) { return this.isFloor() ? F.argOptions(op, this.activeType()) : this.isTruck() ? D.argOptions(op, this.level) : C.argOptions(op); };
+  Game.prototype.argNext = function (op, arg, dir) { return this.isFloor() ? F.cycleArg(op, this.activeType(), arg, dir) : this.isTruck() ? D.cycleArg(op, this.level, arg, dir) : C.cycleArg(op, arg, dir); };
+  Game.prototype.argDefault = function (op) { return this.isFloor() ? F.defaultArg(op, this.activeType()) : this.isTruck() ? D.defaultArg(op, this.level) : C.defaultArg(op); };
+  Game.prototype.argText = function (line) { return this.isFloor() ? F.argLabel(line.op, line.arg) : this.isTruck() ? D.argLabel(line.op, line.arg) : C.argLabel(line.op, line.arg); };
   Game.prototype.snapEdit = function () {
     if (this.isFloor()) return this.snapFloor();
+    if (this.isTruck()) return this.snapTruck();
     return JSON.stringify({ p: this.program, c: this.cursor });
   };
   Game.prototype.restoreEdit = function (raw) {
     var s = JSON.parse(raw);
     if (this.isFloor()) { this.restoreFloor(s); return; }
+    if (this.isTruck()) { this.restoreTruck(s); return; }
     this.program = s.p; this.cursor = Math.min(s.c, this.program.length - 1);
   };
 
@@ -122,6 +129,7 @@
 
   Game.prototype.afterEdit = function () {
     if (this.isFloor()) this.save.floors[this.level.id] = this.floor;
+    else if (this.isTruck()) this.saveTruck();
     else this.save.programs[this.level.id] = this.program;
     this.persist();
     this.recompile();
@@ -240,7 +248,7 @@
 
   // ---------- running ----------
   Game.prototype.reset = function () {
-    this.sim = this.isFloor() ? F.initState(this.level, this.streamIdx) : C.initState(this.level, this.streamIdx);
+    this.sim = this.isFloor() ? F.initState(this.level, this.streamIdx) : this.isTruck() ? D.initState(this.level, this.streamIdx, this.cityOpts) : C.initState(this.level, this.streamIdx);
     this.history = [this.sim];
     this.mode = 'edit';
     this.acc = 0;
@@ -250,6 +258,7 @@
 
   Game.prototype.checkProgram = function () {
     if (this.isFloor()) return this.checkFloor();
+    if (this.isTruck()) return this.checkTruck();
     if (!this.compiled.ok) {
       var e = this.compiled.errors[0];
       this.cursor = e.line;
@@ -262,7 +271,7 @@
   };
 
   Game.prototype.stepOnce = function () {
-    var next = this.isFloor() ? F.step(this.fctx, this.sim) : C.step(this.ctx, this.sim);
+    var next = this.isFloor() ? F.step(this.fctx, this.sim) : this.isTruck() ? D.step(this.dctx, this.sim) : C.step(this.ctx, this.sim);
     this.sim = next;
     this.history.push(next);
     if (this.history.length > HISTORY_CAP) this.history.splice(1, 1);
@@ -315,12 +324,14 @@
     var st = this.sim;
     if (st.status === 'fault') {
       if (this.isFloor()) this.showFloorFault(st);
+      else if (this.isTruck()) this.showTruckFault(st);
       else if (st.line >= 0) this.cursor = st.line;
       this.flash(st.msg, 'fault');
       this.sfx.play('fault');
       return;
     }
-    var ev = this.isFloor() ? F.evaluate(this.level, this.floor) : C.evaluate(this.level, this.program);
+    if (this.isTruck() && this.level.city) { this.finishCity(); return; }
+    var ev = this.isFloor() ? F.evaluate(this.level, this.floor) : this.isTruck() ? D.evaluate(this.level, this.routes) : C.evaluate(this.level, this.program);
     this.result = ev;
     if (ev.cleared) {
       var id = this.level.id;
@@ -361,6 +372,7 @@
   // ---------- trace-back ----------
   Game.prototype.outputCells = function () {
     if (this.isFloor()) return this.floorOutputs();
+    if (this.isTruck()) return this.truckOutputs();
     return this.sim.shipped.concat(this.sim.scrapped);
   };
   Game.prototype.traceCell = function (id) {
@@ -369,6 +381,7 @@
       if (cells[i].id === id) {
         this.inspectIdx = i;
         if (this.isFloor()) { this.traceFloorCell(cells[i]); return; }
+        if (this.isTruck()) { this.traceTruckOrder(cells[i]); return; }
         this.traceLine = cells[i].line === undefined ? -1 : cells[i].line;
         if (this.traceLine >= 0) this.cursor = this.traceLine;
         this.sfx.play('tick');
@@ -437,6 +450,7 @@
     // while the deck is actively running, editing buttons do nothing (cursor and palette still move)
     var live = this.mode === 'run' || this.mode === 'fast';
     if (this.isFloor() && this.floorButton(b, phase, press, live)) return;
+    if (this.isTruck() && this.truckButton(b, phase, press, live)) return;
     if (live && (b === 'X' || b === 'A' || b === 'Y')) return;
 
     switch (b) {
@@ -554,6 +568,7 @@
       default:
         if (this.ledgerAct && this.ledgerAct(a)) break;
         if (this.isFloor()) this.floorAct(a);
+        else if (this.isTruck()) this.truckAct(a);
     }
     this.changed();
   };
@@ -589,6 +604,7 @@
       muted: !!(this.sfx.muted)
     };
     if (this.isFloor()) this.floorViewModel(vm);
+    if (this.isTruck()) this.truckViewModel(vm);
     if ((this.overlay === 'ledger' || this.overlay === 'report') && this.ledgerViewModel) vm.ledger = this.ledgerViewModel();
     return vm;
   };

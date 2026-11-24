@@ -210,6 +210,89 @@ const base = process.argv[3] || 'http://127.0.0.1:8765/index.html';
     await c6.close();
   }
 
+  // chapter 3 (Dispatch): truck contracts at every screen shape, then every reference in the browser
+  for (const [name, w, h] of [['ch3-desktop', 1440, 900], ['ch3-thor-top', 960, 540], ['ch3-thor-bottom', 620, 540], ['ch3-phone', 390, 844]]) {
+    const c7 = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2 });
+    const p7 = await c7.newPage(); watch(p7, name);
+    await p7.goto(base + '?unlock=all', { waitUntil: 'load' });
+    await p7.evaluate(() => {
+      const g = Overshift.game, D = OvershiftDispatch, i = D.LEVELS[6].index;
+      g.selectLevel(i); g.routes = D.LEVELS[6].refPrograms.map(p => JSON.parse(JSON.stringify(p))); g.active = 0; g.bindTruck(); g.afterEdit(); g.changed();
+    });
+    await p7.waitForTimeout(250);
+    await p7.screenshot({ path: `${out}/${name}-edit.png` });
+    if (name === 'ch3-desktop') {
+      await p7.click('.ed-modes [data-truck="1"]');
+      const act = await p7.evaluate(() => Overshift.game.active);
+      console.log('tapping the Truck 2 tab switches trucks:', act === 1);
+      if (act !== 1) problems++;
+    }
+    await p7.evaluate(() => { const g = Overshift.game; g.run(false); for (let k = 0; k < 14; k++) g.stepOnce(); g.mode = 'pause'; g.changed(); });
+    await p7.waitForTimeout(600);
+    await p7.screenshot({ path: `${out}/${name}-running.png` });
+    await c7.close();
+  }
+  {
+    const c8 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const p8 = await c8.newPage(); watch(p8, 'ch3-all');
+    await p8.goto(base + '?unlock=all', { waitUntil: 'load' });
+    for (let i = 0; i < 8; i++) {
+      const r = await p8.evaluate(i => {
+        const g = Overshift.game, lv = OvershiftDispatch.LEVELS[i];
+        g.selectLevel(lv.index); g.routes = lv.refPrograms.map(p => JSON.parse(JSON.stringify(p))); g.active = 0; g.bindTruck(); g.afterEdit(); g.run(true);
+        let k = 0; while (g.mode !== 'done' && k++ < 5000) g.tick(5);
+        g.changed();
+        return { id: lv.id, ok: g.overlay === 'cleared' };
+      }, i);
+      if (!r.ok) { problems++; console.log('chapter 3 reference did not clear in browser:', r.id); }
+      if (i === 7) { await p8.waitForTimeout(150); await p8.screenshot({ path: `${out}/ch3-standing-orders-cleared.png` }); }
+    }
+    console.log('chapter 3 references ran in browser');
+    await p8.evaluate(() => { const g = Overshift.game; g.overlay = 'board'; g.boardSel = OvershiftDispatch.LEVELS[0].index; g.changed(); });
+    await p8.waitForTimeout(200);
+    await p8.screenshot({ path: `${out}/ch3-board.png` });
+    await c8.close();
+  }
+  // the Ledger's Dispatch tab and the city route, at the Thor's two screen shapes and on a phone
+  for (const [name, w, h] of [['thor-top', 960, 540], ['thor-bottom', 620, 540], ['phone-portrait', 390, 844], ['desktop', 1440, 900]]) {
+    const c9 = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2 });
+    const p9 = await c9.newPage(); watch(p9, 'dispatch-' + name);
+    await p9.goto(base + '?unlock=all', { waitUntil: 'load' });
+    await p9.evaluate(() => {
+      const g = Overshift.game, all = OvershiftGame.LEVELS;
+      for (const lv of all.slice(0, 20)) { g.save.cleared[lv.id] = true; OvershiftLedger.recordClear(g.save, all, lv, OvershiftLedger.parRun(lv)); }
+      g.save.routes['city-routes'] = [OvershiftCore.parseProgram('LOAD; IF to:market; DRIVE market; ELSE; IF to:heights; DRIVE heights; ELSE; DRIVE canal; DRIVE spire; END; END')];
+      g.save.ledger.credits = 12345; g.dispatchRefresh(true);
+      g.openLedger(); g.setLedgerTab(2); g.changed();
+    });
+    await p9.waitForTimeout(300);
+    await p9.screenshot({ path: `${out}/dispatch-tab-${name}.png` });
+    const d = await p9.evaluate(() => Overshift.game.save.ledger.dispatch);
+    if (!(d && d.ok && d.rate > 0)) { problems++; console.log('city route did not earn:', JSON.stringify(d)); }
+    if (name === 'desktop') {
+      console.log('city route earns', d.rate, 'cr/h');
+      await p9.click('.ed-ledger [data-act=lopen]');
+      await p9.waitForTimeout(200);
+      const city = await p9.evaluate(() => !!Overshift.game.level.city && Overshift.game.overlay === null);
+      console.log('Edit route opens the city route:', city);
+      if (!city) problems++;
+      await p9.screenshot({ path: `${out}/city-edit.png` });
+      await p9.evaluate(() => { const g = Overshift.game; g.run(false); for (let k = 0; k < 60; k++) g.stepOnce(); g.mode = 'pause'; g.changed(); });
+      await p9.waitForTimeout(600);
+      await p9.screenshot({ path: `${out}/city-running.png` });
+      await p9.evaluate(() => { const g = Overshift.game; g.run(true); let k = 0; while (g.mode !== 'done' && k++ < 20000) g.tick(5); g.changed(); });
+      await p9.waitForTimeout(200);
+      await p9.screenshot({ path: `${out}/city-done.png` });
+      console.log('city sample:', await p9.evaluate(() => Overshift.game.sim.msg));
+    } else if (name === 'thor-top' || name === 'thor-bottom') {
+      // the city route in the editor at this shape
+      await p9.evaluate(() => { const g = Overshift.game; g.openCity(); g.changed(); });
+      await p9.waitForTimeout(250);
+      await p9.screenshot({ path: `${out}/city-edit-${name}.png` });
+    }
+    await c9.close();
+  }
+
   // two windows: deck host + remote editor over BroadcastChannel
   const ctx3 = await browser.newContext({ viewport: { width: 960, height: 540 } });
   const deckPage = await ctx3.newPage(); watch(deckPage, 'deck');

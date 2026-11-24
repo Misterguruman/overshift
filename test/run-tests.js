@@ -10,11 +10,14 @@ const C = require(path.join(__dirname, '../web/js/core.js'));
 globalThis.OvershiftCore = C;
 const F = require(path.join(__dirname, '../web/js/floor.js'));
 globalThis.OvershiftFloor = F;
+const D = require(path.join(__dirname, '../web/js/dispatch.js'));
+globalThis.OvershiftDispatch = D;
 const LG = require(path.join(__dirname, '../web/js/ledger.js'));
 globalThis.OvershiftLedger = LG;
 require(path.join(__dirname, '../web/js/game.js'));
 require(path.join(__dirname, '../web/js/floorgame.js'));
 require(path.join(__dirname, '../web/js/ledgergame.js'));
+require(path.join(__dirname, '../web/js/dispatchgame.js'));
 const Game = globalThis.OvershiftGame;
 
 let pass = 0, fail = 0;
@@ -198,7 +201,7 @@ console.log('\nChapter 2: Junction Floor');
 const FL = id => F.LEVELS.find(l => l.id === id);
 const DOC_PAR = { 'two-docks': 3, 'respray-line': 4, 'three-way': 6, 'gauge': 6, 'batch-split': 4, 'every-third': 5, 'crossover': 8, 'recirculate': 4, 'tight-floor': 6, 'night-audit': 10 };
 ok(F.LEVELS.length === 10, 'chapter 2 has 10 contracts');
-ok(Game.LEVELS.length === C.LEVELS.length + 10, 'the game lists both chapters');
+ok(Game.LEVELS.length === C.LEVELS.length + 10 + D.LEVELS.length, 'the game lists all three chapters');
 
 // every reference floor clears every stream, within the kit, at the design's par size
 for (const lv of F.LEVELS) {
@@ -400,11 +403,13 @@ ok(g.program.length === 1 && g.program[0].op === 'PAINT' && g.paletteIdx === 0, 
 g.act({ type: 'btn', b: 'L1', phase: 'down' }); press(g, 'L3'); g.act({ type: 'btn', b: 'L1', phase: 'up' });
 ok(g.overlay === 'board' && g.fmode === 'program', 'L1 + L3 opens the contract board');
 press(g, 'R1');
+ok(g.overlay === 'board' && g.boardSel === N1 + 10 + 6, 'R1 on chapter 2 flips to chapter 3, same slot', g.boardSel);
+press(g, 'R1');
 ok(g.overlay === 'ledger', 'R1 on the last chapter page flips to the Ledger page', g.overlay);
 press(g, 'R1');
-ok(g.overlay === 'board' && g.boardSel === (N1 + 6 + 10) % Game.LEVELS.length, 'R1 on the Ledger flips to chapter 1, same slot', g.boardSel);
+ok(g.overlay === 'board' && g.boardSel === 6, 'R1 on the Ledger flips to chapter 1, same slot', g.boardSel);
 press(g, 'L1'); press(g, 'L1');
-ok(g.overlay === 'board' && g.boardSel === N1 + 6, 'L1 twice goes back through the Ledger to chapter 2', g.boardSel);
+ok(g.overlay === 'board' && g.boardSel === N1 + 16, 'L1 twice goes back through the Ledger to chapter 3', g.boardSel);
 press(g, 'B');
 ok(g.overlay === null, 'B closes the board');
 
@@ -463,6 +468,8 @@ console.log('\nThe Ledger');
   const snap = () => JSON.stringify(ALL.map(lv => [lv.id, lv.palette, lv.limit, lv.parSize, lv.parCycles, lv.parParts, lv.streams, lv.slots, lv.kit, lv.W, lv.H]));
   const levelsBefore = snap();
   sv.ledger.credits = 1e9;
+  ok(!LG.buy(sv, ALL, 'fleet').ok && /Night Audit/.test(LG.buy(sv, ALL, 'fleet').msg), 'Fleet is locked until Night Audit is cleared');
+  sv.cleared = { 'night-audit': true };
   for (const u of LG.UPGRADES) { let k = 0; while (LG.buy(sv, ALL, u.id).ok) k++; ok(k === u.costs.length, `${u.name} buys ${u.costs.length} levels`, k); }
   ok(LG.bayCount(sv.ledger) === 12 && LG.shiftHours(sv.ledger) === 24 && Math.abs(LG.overclock(sv.ledger) - 1.5) < 1e-9, 'top levels: 12 bays, 24h shift, +50%');
   ok(LG.upgradeCost(sv.ledger, 'bays') === null && !LG.buy(sv, ALL, 'bays').ok, 'a maxed upgrade can\'t be bought again');
@@ -550,7 +557,7 @@ console.log('\nThe Ledger');
   ok(lg.save.ledger.bays.length === 3 && lg.save.ledger.bays.includes(vm.ledger.rows[outRow].id), 'A puts another in the free bay');
   press(lg, 'R2');
   vm = lg.viewModel();
-  ok(vm.ledger.tab === 'upgrades' && vm.ledger.rows.length === 3, 'R2 switches to Upgrades');
+  ok(vm.ledger.tab === 'upgrades' && vm.ledger.rows.length === 5, 'R2 switches to Upgrades');
   const cr0 = lg.save.ledger.credits;
   lg.ledgerSel = 0;
   lg.act({ type: 'btn', b: 'A', phase: 'down' });
@@ -587,6 +594,206 @@ console.log('\nThe Ledger');
   // a fresh install starts with an empty Ledger and no report
   const g0 = new Game({ sfx: silent, now });
   ok(g0.save.ledger.credits === 0 && g0.overlay === 'board', 'a new player starts at 0 cr on the board');
+}
+
+// ---------------- Dispatch (chapter 3, First Routes, and the Ledger's city routes) ----------------
+console.log('\nChapter 3: First Routes (Dispatch)');
+{
+  const DL = id => D.LEVELS.find(l => l.id === id);
+  const H = LG.HOUR;
+  const FL = id => F.LEVELS.find(l => l.id === id);
+  const N2 = C.LEVELS.length + F.LEVELS.length;
+  ok(D.LEVELS.length === 8, 'First Routes has the 8 drafted truck contracts');
+  ok(D.LEVELS.every((lv, i) => lv.index === N2 + i && Game.LEVELS[N2 + i] === lv && lv.code === '3-0' + (i + 1)), 'truck contracts follow Junction Floor on the board, 3-01 to 3-08');
+  for (const lv of D.LEVELS) {
+    const ev = D.evaluate(lv, lv.refPrograms);
+    ok(ev.cleared, `${lv.code} ${lv.name}: reference clears all ${lv.streams.length} streams`, JSON.stringify(ev.results.map(r => r.msg)));
+    ok(lv.streams.length === 5 && lv.visibleStreams === 3, `${lv.code}: 3 visible + 2 hidden streams`);
+    ok(ev.size === lv.parSize && ev.cycles === lv.parCycles, `${lv.code}: par is the reference (size ${ev.size}, cycles ${ev.cycles})`);
+    ok(lv.refPrograms.length === lv.trucks, `${lv.code}: one reference program per truck`);
+    for (const p of lv.refPrograms) ok(D.compileTruck(p, lv).ok, `${lv.code}: reference compiles`);
+    ok(lv.refPrograms.every(p => p.every(l => lv.palette.includes(l.op))), `${lv.code}: reference only uses the contract's palette`);
+    console.log(`  ${lv.code} ${lv.name.padEnd(16)} trucks ${lv.trucks}  size ${ev.size}  cycles ${ev.cycles}`);
+  }
+  // each contract needs the idea it teaches: the simpler program fails
+  const Pt = (lv, srcs) => (Array.isArray(srcs) ? srcs : Array(lv.trucks).fill(srcs)).map(s => P(s));
+  const fails = (id, srcs) => !D.evaluate(DL(id), Pt(DL(id), srcs)).cleared;
+  ok(fails('two-stops', 'LOAD; DRIVE canal'), 'Two Stops: driving everything to Canal fails');
+  ok(fails('full-load', 'LOAD; DRIVE spire'), 'Full Load: one order a trip runs late');
+  ok(fails('short-stock', 'LOAD; DRIVE canal'), 'Short Stock: loading without SHORT faults on magenta');
+  ok(fails('rush-hour', 'LOAD; DRIVE docks') && fails('rush-hour', 'LOOP 3; LOAD; NEXT; END; LOAD; DRIVE docks'), 'Rush Hour: all direct or all batched both run late');
+  ok(fails('one-road', 'LOAD; IF to:canal; DRIVE canal; ELSE; IF to:market; DRIVE market; ELSE; DRIVE heights; END; END'), 'One Road: one stop a trip runs late');
+  ok(fails('two-trucks', ['LOAD; IF to:canal; DRIVE canal; ELSE; DRIVE market; END', 'WAIT 10']), 'Two Trucks: one truck alone runs late');
+  ok(fails('standing-orders', 'LOAD; IF to:market; DRIVE market; ELSE; DRIVE canal; DRIVE heights; END'), 'Standing Orders: no SHORT check faults');
+
+  // instruction rules
+  const lv1 = DL('first-run');
+  const r1 = (src, lv = lv1, s = 0) => D.runStream(lv, Pt(lv, src), s);
+  let rr = r1('DRIVE canal; LOAD');
+  ok(rr.status === 'fault' && /only works at the depot/.test(rr.msg), 'LOAD away from the depot faults', rr.msg);
+  rr = r1('LOAD');
+  ok(rr.status === 'fault' && /still loaded/.test(rr.msg) && rr.line === 0, 'ending a trip with cells loaded faults on the last line', rr.msg);
+  rr = r1('NEXT');
+  ok(rr.status === 'fault' && /NEXT with an order in hand/.test(rr.msg), 'NEXT with an unloaded order in hand faults');
+  rr = r1('LOAD; DEFER');
+  ok(rr.status === 'fault' && /already on the truck/.test(rr.msg), 'DEFER of a loaded order faults');
+  rr = r1('WAIT 1');
+  ok(rr.status === 'fault' && /Late/.test(rr.msg), 'a program that never delivers runs late');
+  rr = D.runStream(DL('full-load'), Pt(DL('full-load'), 'LOOP 12; LOAD; NEXT; END; DRIVE spire'), 0);
+  ok(rr.status === 'fault' && /Full/.test(rr.msg), 'loading past the truck bed faults', rr.msg);
+  ok(D.check(lv1, [[]]).length === 1 && /no program/.test(D.check(lv1, [[]])[0].msg), 'an empty truck program is caught before running');
+  ok(D.compileTruck(P('GRAB'), lv1).errors.length === 1, 'a node instruction is a compile error in a truck');
+  ok(D.compileTruck(P('DRIVE market'), lv1).errors.length === 1, 'DRIVE to a district not on the map is an error');
+  ok(D.distance(DL('two-stops'), 'canal', 'market') === 7 && D.distance(DL('one-road'), 'canal', 'heights') === 7, 'across roads goes back through the depot; along one road it is the gap');
+  // time: LOAD 1, DRIVE 1 + road, a trip back to the depot costs the road
+  const st = D.runStream(lv1, Pt(lv1, 'LOAD; DRIVE canal'), 0).state;
+  ok(st.orders[0].at === 5 && st.orders[1].at === 5 + 3 + 5, 'LOAD is 1 tick, DRIVE 1 plus the road, and the trip back costs the road', st.orders.map(o => o.at).join());
+  // determinism
+  const e1 = D.evaluate(DL('standing-orders'), DL('standing-orders').refPrograms), e2 = D.evaluate(DL('standing-orders'), DL('standing-orders').refPrograms);
+  ok(e1.cycles === e2.cycles, 'two trucks on a shared board always give the same result');
+
+  // IF tests: district, colour, qty, due, SHORT, FULL
+  const twoS = DL('two-stops');
+  ok(twoS.ifArgs.includes('to:canal') && twoS.ifArgs.includes('SHORT') && twoS.ifArgs.includes('qty>3') && twoS.ifArgs.includes('due<15'), 'IF can test district, SHORT, FULL, quantity and time left');
+  ok(D.cycleArg('DRIVE', twoS, 'canal', 1) === 'market' && D.cycleArg('DRIVE', twoS, 'market', 1) === 'canal', 'L1/R1 cycle DRIVE through the map’s districts');
+  ok(D.argLabel('IF', 'to:canal') === 'to Canal' && D.argLabel('IF', 'due<15') === 'due < 15', 'IF values read as words');
+
+  // the game host: truck contracts open after Night Audit, edit with the usual buttons, save, clear
+  let tg = new Game({ sfx: silent, skipBoard: true });
+  ok(!tg.isUnlocked(N2), 'First Routes is locked until Junction Floor is cleared');
+  tg.save.cleared['night-audit'] = true;
+  ok(tg.isUnlocked(N2) && !tg.isUnlocked(N2 + 1), 'clearing Night Audit opens 3-01 only');
+  tg = new Game({ sfx: silent, skipBoard: true, unlockAll: true });
+  tg.selectLevel(N2 + 1, true);
+  ok(tg.isTruck() && tg.level.id === 'two-stops' && tg.program.length === 0, 'Two Stops opens with an empty truck program');
+  // build the reference with gamepad buttons: d-pad picks, A inserts, R1 changes the value
+  const pick = op => { while (tg.curPalette()[tg.paletteIdx] !== op) press(tg, 'right'); press(tg, 'A'); };
+  pick('LOAD'); pick('IF');
+  ok(tg.program.map(l => l.op).join() === 'LOAD,IF,END' && tg.program[1].arg === 'to:canal', 'A inserts LOAD, then IF with its END', tg.program.map(l => l.op + (l.arg ? ' ' + l.arg : '')).join());
+  pick('DRIVE'); pick('ELSE'); pick('DRIVE');
+  press(tg, 'R1');
+  ok(tg.program[4].op === 'DRIVE' && tg.program[4].arg === 'market', 'R1 changes DRIVE canal to DRIVE market');
+  ok(JSON.stringify(tg.program) === JSON.stringify(DL('two-stops').refPrograms[0]), 'the program built by buttons is the reference', JSON.stringify(tg.program));
+  ok(JSON.stringify(tg.save.routes['two-stops'][0]) === JSON.stringify(tg.program), 'the route is saved as you edit');
+  let vmT = tg.viewModel();
+  ok(vmT.truck && vmT.truck.tabs.length === 1 && vmT.level.code === '3-02' && vmT.hasArg[4] && vmT.labels[4] === 'Market', 'the view model has the truck, its code and readable values');
+  tg.run(true); let tgd = 0;
+  while (tg.mode !== 'done' && tgd++ < 5000) tg.tick(0.5);
+  ok(tg.overlay === 'cleared' && tg.result.cleared && tg.save.cleared['two-stops'], 'running the route clears Two Stops');
+  ok(tg.result.ledger && tg.save.runs['two-stops'] && tg.result.ledger.pay.total === LG.baseRate(DL('two-stops')) * 8, 'the clear pays first clear and both chips at par');
+
+  // two trucks: L1 + right switches, each has its own program, a fault shows the truck that faulted
+  tg.selectLevel(N2 + 6, true);
+  ok(tg.routes.length === 2 && tg.active === 0, 'Two Trucks has two programs, truck 1 first');
+  pick('LOAD'); pick('DRIVE');
+  tg.act({ type: 'btn', b: 'L1', phase: 'down' }); press(tg, 'right'); tg.act({ type: 'btn', b: 'L1', phase: 'up' });
+  ok(tg.active === 1 && tg.program === tg.routes[1] && tg.program.length === 0 && tg.routes[0].length === 2, 'L1 + right switches to truck 2 without changing a value');
+  pick('LOAD');
+  tg.act({ type: 'truck', i: 0 });
+  ok(tg.active === 0, 'tapping a truck tab switches to it');
+  tg.run(true); tgd = 0;
+  while (tg.mode !== 'done' && tgd++ < 5000) tg.tick(0.5);
+  ok(tg.sim.status === 'fault' && tg.active === 1 && tg.cursor === 0, 'a fault switches to the truck that faulted and its line', tg.sim.msg);
+  press(tg, 'Y');
+  ok(tg.routes[1].length === 0, 'Y undoes on the truck being edited');
+  // trace a delivered order back to its DRIVE line
+  tg.routes = DL('two-trucks').refPrograms.map(p => JSON.parse(JSON.stringify(p))); tg.active = 0; tg.bindTruck(); tg.afterEdit();
+  tg.run(true); tgd = 0;
+  while (tg.mode !== 'done' && tgd++ < 5000) tg.tick(0.5);
+  ok(tg.result && tg.result.cleared, 'Two Trucks clears with the reference');
+  tg.overlay = null; tg.reset();
+  for (let k = 0; k < 40; k++) tg.stepOnce();
+  const outs = tg.outputCells();
+  ok(outs.length > 0, 'delivered orders can be inspected');
+  tg.traceCell(outs[0].id);
+  ok(tg.traceLine === outs[0].line && tg.program[tg.traceLine].op === 'DRIVE', 'R3 traces a delivery to its DRIVE line');
+
+  // ---------- the Ledger's Dispatch tab: city routes, fleet and truck bed ----------
+  const sv = { cleared: {}, runs: {} };
+  LG.migrate(sv, Game.LEVELS, null, 0);
+  ok(sv.ledger.up.fleet === 0 && sv.ledger.up.bed === 0 && sv.ledger.dispatch === null && LG.fleetSize(sv.ledger) === 1 && LG.bedCap(sv.ledger) === 12, 'a Ledger starts with 1 truck carrying 12 cells');
+  const old = { cleared: {}, runs: {}, ledger: { v: 1, credits: 5, lifetime: 5, bays: [], up: { bays: 1, overclock: 0, shift: 0 }, lastSeen: 0, paid: {} } };
+  LG.migrate(old, Game.LEVELS, null, 0);
+  ok(old.ledger.up.fleet === 0 && old.ledger.up.bed === 0 && old.ledger.up.bays === 1 && old.ledger.credits === 5, 'a v0.5 Ledger keeps everything and gains Fleet and Truck bed at level 0');
+  // supply from the bays: deck cells 1 cr, floor 2 cr, truck contracts none
+  sv.runs = { 'bulk-order': LG.parRun(L('bulk-order')), 'two-docks': LG.parRun(FL('two-docks')), 'first-run': LG.parRun(DL('first-run')) };
+  sv.ledger.bays = ['bulk-order', 'two-docks', 'first-run'];
+  const sup = LG.dispatchSupply(sv, LG.index(Game.LEVELS));
+  const cellsH = Object.values(sup.supply).reduce((a, b) => a + b, 0);
+  ok(Math.abs(cellsH - (LG.baseRate(L('bulk-order')) + LG.baseRate(FL('two-docks')) / 2)) < 0.2, 'bays feed the depot their credits as cells (1 cr each on the deck, 2 on the floor)', cellsH);
+  // the city sample pays a premium; more trucks deliver more; the same inputs give the same answer
+  const route = P('LOAD; IF to:market; DRIVE market; ELSE; IF to:heights; DRIVE heights; ELSE; DRIVE canal; DRIVE spire; END; END');
+  const big = { supply: { cyan: 60, magenta: 30, amber: 20, lime: 10 }, spot: { cyan: 1, magenta: 1, amber: 2, lime: 2 }, day: 20000 };
+  const s1 = D.citySample(route, Object.assign({ fleet: 1, cap: 12 }, big)), s4 = D.citySample(route, Object.assign({ fleet: 4, cap: 12 }, big));
+  ok(s1.ok && s1.rate > 0 && s4.rate > s1.rate, 'more trucks deliver more of the same supply', s1.rate + ' vs ' + s4.rate);
+  ok(D.citySample(route, Object.assign({ fleet: 4, cap: 12 }, big)).rate === s4.rate, 'a sample hour is deterministic');
+  const batch = P('LOOP 2; LOAD; NEXT; END; LOAD; DRIVE canal; DRIVE spire; DRIVE market; DRIVE heights');
+  const b12 = D.citySample(batch, Object.assign({ fleet: 2, cap: 12 }, big)), b32 = D.citySample(batch, Object.assign({ fleet: 2, cap: 32 }, big));
+  ok(!b12.ok && /Full/.test(b12.msg) && b32.ok, 'a bigger truck bed lets a batching route run that a 12-cell bed faults', b12.msg);
+  const bad = D.citySample(P('LOAD'), Object.assign({ fleet: 1, cap: 12 }, big));
+  ok(!bad.ok && bad.rate === 0 && bad.line === 0, 'a faulting route earns nothing and names its line');
+  ok(D.cityDemand(20000).mix.cyan !== D.cityDemand(20001).mix.cyan, 'demand changes from one day to the next');
+  // settle pays the stored dispatch rate as its own row
+  const sv2 = { cleared: {}, runs: {} };
+  LG.migrate(sv2, Game.LEVELS, null, 0);
+  sv2.ledger.dispatch = { ok: true, rate: 120 };
+  const rs = LG.settle(sv2, Game.LEVELS, H);
+  ok(Math.abs(rs.total - 120) < 1e-9 && rs.bays.length === 1 && rs.bays[0].id === 'dispatch', 'time away pays the city routes as their own row');
+  ok(Math.abs(LG.totalRate(sv2, LG.index(Game.LEVELS)) - 120) < 1e-9, 'the earning rate includes the city routes');
+  sv2.ledger.dispatch.ok = false;
+  ok(LG.totalRate(sv2, LG.index(Game.LEVELS)) === 0, 'a faulting route earns nothing');
+
+  // through the host: the Dispatch tab, editing the city route, Fleet bought with a hold
+  const store = {};
+  globalThis.localStorage = { getItem: k => store[k] || null, setItem: (k, v) => { store[k] = v; } };
+  let t = 1e12;
+  const now = () => t;
+  const dg = new Game({ sfx: silent, now, unlockAll: true });
+  dg.openLedger();
+  dg.setLedgerTab(2);
+  let dv = dg.viewModel().ledger;
+  ok(dv.tab === 'dispatch' && dv.dispatch && !dv.dispatch.open, 'the Dispatch tab says it is closed before Night Audit');
+  press(dg, 'A');
+  ok(dg.overlay === 'ledger' && /Night Audit/.test(dg.flashMsg.msg), 'A on a closed Dispatch tab explains');
+  dg.save.cleared['night-audit'] = true;
+  dg.save.runs['bulk-order'] = LG.parRun(L('bulk-order'));
+  dg.save.runs['two-docks'] = LG.parRun(FL('two-docks'));
+  dg.save.ledger.bays = ['bulk-order', 'two-docks'];
+  dg.dispatchRefresh(true);
+  dv = dg.viewModel().ledger;
+  ok(dv.dispatch.open && dv.dispatch.empty && dv.dispatch.rate === 0 && dv.dispatch.cellsPerHour > 0, 'an open Dispatch with no route yet earns nothing, and shows the bays’ cells', JSON.stringify(dv.dispatch));
+  press(dg, 'A');
+  ok(dg.overlay === null && dg.level.city && dg.isTruck() && dg.routes.length === 1, 'A opens the city route in the editor');
+  ok(dg.viewModel().truck.city && dg.viewModel().level.code === 'R', 'the editor shows the city route');
+  for (const op of ['LOAD', 'DRIVE']) { while (dg.curPalette()[dg.paletteIdx] !== op) press(dg, 'right'); press(dg, 'A'); }
+  ok(dg.save.routes['city-routes'][0].length === 2, 'the city route saves as you edit');
+  const d0 = dg.save.ledger.dispatch;
+  ok(d0 && !d0.empty, 'editing the route measures it again', JSON.stringify(d0));
+  dg.run(true); let dgd = 0;
+  while (dg.mode !== 'done' && dgd++ < 20000) dg.tick(0.5);
+  ok(dg.mode === 'done' && (dg.sim.status === 'win' || dg.sim.status === 'fault'), 'Run plays the sample hour to its end', dg.sim.status + ' ' + dg.sim.msg);
+  press(dg, 'L3');
+  ok(dg.overlay === 'ledger' && dg.viewModel().ledger.tab === 'dispatch', 'L3 from the city route goes back to the Dispatch tab');
+  // a good route: every district, a batching program
+  dg.save.routes['city-routes'] = [P('LOAD; IF to:market; DRIVE market; ELSE; IF to:heights; DRIVE heights; ELSE; DRIVE canal; DRIVE spire; END; END')];
+  dg.dispatchRefresh(true);
+  const rate1 = dg.save.ledger.dispatch.rate;
+  ok(dg.save.ledger.dispatch.ok && rate1 > 0, 'a working city route earns credits per hour', JSON.stringify(dg.save.ledger.dispatch));
+  ok(Math.abs(dg.ledgerRate() - (LG.lineRate(dg.save, LG.index(Game.LEVELS), 'bulk-order') + LG.lineRate(dg.save, LG.index(Game.LEVELS), 'two-docks') + rate1)) < 1e-6, 'the Ledger rate adds the routes to the bays');
+  dg.save.ledger.credits = 1e6;
+  dg.setLedgerTab(1);
+  dg.ledgerSel = dg.ledgerRows().findIndex(r => r.id === 'fleet');
+  dg.act({ type: 'btn', b: 'A', phase: 'down' }); dg.tick(0.3); dg.tick(0.3); dg.act({ type: 'btn', b: 'A', phase: 'up' });
+  ok(dg.save.ledger.up.fleet === 1 && LG.fleetSize(dg.save.ledger) === 2, 'holding A buys a second truck');
+  ok(dg.save.ledger.dispatch.sig && dg.save.ledger.dispatch.rate >= rate1, 'a bigger fleet re-measures the route', dg.save.ledger.dispatch.rate + ' vs ' + rate1);
+  // a new day re-measures by itself
+  const sig0 = dg.save.ledger.dispatch.sig;
+  t += 26 * H; dg.tick(1.1);
+  ok(dg.save.ledger.dispatch.sig !== sig0 && dg.save.ledger.dispatch.day === D.dayNumber(t), 'a new day brings a new demand mix and a new sample');
+  // the Shift report lists the routes
+  t += 3 * H; dg.overlay = null; dg.tick(1.1);
+  ok(dg.overlay === 'report' && dg.report.rows.some(r => r.code === 'R' && r.cr > 0), 'the Shift report lists what the city routes earned', JSON.stringify(dg.report && dg.report.rows));
+  delete globalThis.localStorage;
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

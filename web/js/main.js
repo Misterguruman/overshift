@@ -84,6 +84,20 @@
 
   ['pointerdown', 'keydown'].forEach(function (ev) { root.addEventListener(ev, function () { sfx.unlock(); }, { capture: true }); });
 
+  // the line above the controls table follows the chapter on screen
+  var LEADS = {
+    servo: 'Program <b>Servo</b> to fill each order ticket. Every action moves Servo to its station first: 1 cycle per station passed, plus 1 for the action. The contract clears only when the program fills the order for every intake stream, including hidden ones.',
+    floor: 'Build a line of nodes on the floor, then program each one. Belts carry cells between them. The contract clears only when the line fills the order for every intake stream, including hidden ones.',
+    ledger: 'The <b>Ledger</b> pays for contracts you have cleared, while you are away too. Put contracts in bays, buy upgrades, and in Dispatch write one route that sells your bays\u2019 cells to the city.',
+    truck: 'Program each <b>truck</b>. It runs its program once per trip, starting at the depot with the order at the head of the board in hand. LOAD takes the cells from stock, DRIVE delivers on the way. Late counts as a fault. L1 + ◀ ▶ switches trucks.'
+  };
+  var helpEl = document.getElementById('help-lead'), helpKind = 'servo';
+  function helpLead(lv) {
+    var k = lv && LEADS[lv.kind] ? lv.kind : (lv && lv.chapter === 2 ? 'floor' : 'servo');
+    if (!helpEl || k === helpKind) return;
+    helpKind = k; helpEl.innerHTML = LEADS[k];
+  }
+
   var last = performance.now();
   function frame(now) {
     var dt = Math.min(0.1, (now - last) / 1000);
@@ -94,7 +108,7 @@
     if (dirty) {
       dirty = false;
       var vm = game.viewModel();
-      if (Overshift.layout === 'both') localEditor.render(vm);
+      if (Overshift.layout === 'both') { localEditor.render(vm); helpLead(vm.ledger ? { kind: 'ledger' } : vm.level); }
       if (remoteSeen || nativeBridge || channel) send({ t: 'snap', s: vm });
     }
     requestAnimationFrame(frame);

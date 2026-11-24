@@ -5,7 +5,7 @@
  */
 (function (root) {
   'use strict';
-  var KIND = { GRAB: 'act', SHIP: 'act', SCRAP: 'act', PAINT: 'act', CHARGE: 'act', DRAIN: 'act', SEND: 'act', TICK: 'act', CLEAR: 'act', LOOP: 'flow', IF: 'flow', ELSE: 'flow', END: 'flow' };
+  var KIND = { GRAB: 'act', SHIP: 'act', SCRAP: 'act', PAINT: 'act', CHARGE: 'act', DRAIN: 'act', SEND: 'act', TICK: 'act', CLEAR: 'act', LOAD: 'act', NEXT: 'act', DRIVE: 'act', DEFER: 'act', WAIT: 'act', LOOP: 'flow', IF: 'flow', ELSE: 'flow', END: 'flow' };
   var ARROWS = ['→', '↓', '←', '↑'];
   var NODE_CLS = { splitter: 'n-spl', painter: 'n-pnt', press: 'n-prs', counter: 'n-cnt' };
   var COLORS = ['cyan', 'magenta', 'amber', 'lime'];
@@ -117,7 +117,7 @@
       // swipe a line left to delete it
       if (row && dx < -60 && Math.abs(dy) < 40 && row.dataset.i >= 0) { self.dispatch({ type: 'delete', i: +row.dataset.i }); return; }
       if (Math.abs(dx) > 12 || Math.abs(dy) > 12) return; // a scroll, not a tap
-      var t = start.closest && start.closest('[data-act],[data-pal],[data-cycle],[data-tool],[data-tile],[data-part],[data-fmode],[data-tab],[data-ltab],[data-lrow],.row');
+      var t = start.closest && start.closest('[data-act],[data-pal],[data-cycle],[data-tool],[data-tile],[data-part],[data-fmode],[data-tab],[data-truck],[data-ltab],[data-lrow],.row');
       if (!t) return;
       if (t.dataset.act) { self.dispatch({ type: t.dataset.act }); return; }
       if (t.dataset.ltab !== undefined) { self.dispatch({ type: 'ltab', i: +t.dataset.ltab }); return; }
@@ -126,6 +126,7 @@
       if (t.dataset.part !== undefined) { self.dispatch({ type: 'part', i: +t.dataset.part }); return; }
       if (t.dataset.fmode) { self.dispatch({ type: 'fmode', m: t.dataset.fmode }); return; }
       if (t.dataset.tab !== undefined) { self.dispatch({ type: 'tab', s: +t.dataset.tab }); return; }
+      if (t.dataset.truck !== undefined) { self.dispatch({ type: 'truck', i: +t.dataset.truck }); return; }
       if (t.dataset.pal !== undefined) { self.dispatch({ type: 'palette', i: +t.dataset.pal }); return; }
       if (t.dataset.cycle !== undefined) { self.dispatch({ type: 'cycle', i: +t.dataset.cycle, dir: 1 }); return; }
       if (t.dataset.tool) {
@@ -155,11 +156,17 @@
     this.el.classList.toggle('ed-ledgering', !!vm.ledger);
     if (vm.ledger) { this.renderLedger(vm); return; }
 
-    var fl = vm.floor, building = !!fl && fl.fmode === 'build';
+    var fl = vm.floor, building = !!fl && fl.fmode === 'build', tr = vm.truck;
     this.el.classList.toggle('ed-floor', !!fl);
+    this.el.classList.toggle('ed-truck', !!tr);
     this.el.classList.toggle('ed-building', building);
-    q.title.innerHTML = '<b>' + (lv.chapter === 2 ? '2-' + pad2(lv.num) : pad2(lv.index + 1)) + '</b> ' + esc(lv.name);
-    if (fl) {
+    q.title.innerHTML = '<b>' + esc(lv.code || (lv.chapter === 2 ? '2-' + pad2(lv.num) : pad2(lv.index + 1))) + '</b> ' + esc(lv.name);
+    if (tr) {
+      q.size.innerHTML = tr.city
+        ? 'ROUTE <b>' + vm.size + '</b> <span class="ed-dim">lines · ' + tr.count + (tr.count > 1 ? ' trucks' : ' truck') + ' · ' + tr.cap + ' cells</span>'
+        : (tr.tabs.length > 1 ? esc(tr.tabs[tr.active].label) + ' ' : 'SIZE ') + '<b>' + vm.size + '</b>' + (tr.tabs.length > 1 ? ' <span class="ed-dim">all ' + tr.total + '</span>' : '') + ' <span class="ed-dim">par ' + lv.parSize + '</span>';
+      this.renderTruckTabs(vm);
+    } else if (fl) {
       var act = fl.active >= 0 ? fl.slots[fl.active] : null;
       q.size.innerHTML = act
         ? esc(act.label) + ' <b>' + vm.size + '</b><span class="' + (vm.size > act.cap ? 'bad' : '') + '">/' + act.cap + '</span>' + (act.t === 'counter' ? ' <span class="ed-dim">count ' + act.mem + '</span>' : '') + ' <span class="ed-dim">floor ' + fl.size + '·par ' + fl.parSize + '</span>'
@@ -176,7 +183,7 @@
     // program
     var errs = {};
     vm.errors.forEach(function (e) { if (errs[e.line] === undefined) errs[e.line] = e.msg; });
-    var html = '<div class="row row-start' + (vm.cursor === -1 ? ' cursor' : '') + '" data-i="-1"><span class="ln">··</span><span class="code ed-dim">shift start</span></div>';
+    var html = '<div class="row row-start' + (vm.cursor === -1 ? ' cursor' : '') + '" data-i="-1"><span class="ln">··</span><span class="code ed-dim">' + (tr ? 'trip start · order in hand' : 'shift start') + '</span></div>';
     for (var i = 0; i < vm.program.length; i++) {
       var ln = vm.program[i];
       var cls = 'row k-' + KIND[ln.op];
@@ -198,7 +205,7 @@
         '<span class="code" style="padding-left:' + (vm.indents[i] * 0.85) + 'em"><span class="op">' + ln.op + '</span>' + arg + '</span>' +
         tools + '</div>';
     }
-    if (!vm.program.length) html += '<div class="ed-empty">' + (fl && fl.active < 0 ? 'Place a node in Build mode, then program it here.' : 'Pick an instruction from the palette. It goes in below the cursor.') + '</div>';
+    if (!vm.program.length) html += '<div class="ed-empty">' + (fl && fl.active < 0 ? 'Place a node in Build mode, then program it here.' : tr ? 'A truck runs this once per trip, starting at the depot with the next order in hand. Try LOAD, then DRIVE.' : 'Pick an instruction from the palette. It goes in below the cursor.') + '</div>';
     q.prog.innerHTML = html;
 
     // palette
@@ -208,7 +215,7 @@
       pal += '<button class="tile k-' + KIND[op] + (p === vm.paletteIdx ? ' sel' : '') + '" data-pal="' + p + '">' + op + '</button>';
     }
     q.pal.innerHTML = pal;
-    q.held.innerHTML = heldHtml(vm.held).replace('HELD', fl ? 'CELL' : 'HELD');
+    q.held.innerHTML = tr ? orderHtml(tr) : heldHtml(vm.held).replace('HELD', fl ? 'CELL' : 'HELD');
 
     // message line
     var msg, kind = '';
@@ -230,6 +237,28 @@
       if (top < q.prog.scrollTop) q.prog.scrollTop = top - 4;
       else if (bottom > q.prog.scrollTop + q.prog.clientHeight) q.prog.scrollTop = bottom - q.prog.clientHeight + 4;
     }
+  };
+
+  function orderHtml(tr) {
+    var h = tr.hand;
+    var load = '<span class="ed-dim"> · ' + tr.cells + '/' + tr.cap + '</span>';
+    if (!h) return '<span class="ed-lbl">ORDER</span><span class="hex hex-empty"></span><span class="ed-dim">none</span>' + load;
+    return '<span class="ed-lbl">ORDER</span><span class="hex c-' + h.c + '"><span>' + h.n + '</span></span><span class="c-' + h.c + '-t">' + esc(h.d) + ' ×' + h.n + '</span>' + load;
+  }
+
+  /** Truck tabs (one per truck program), or the city route's way back to the Ledger. */
+  Editor.prototype.renderTruckTabs = function (vm) {
+    var tr = vm.truck, html = '';
+    if (tr.city) html += '<button class="md on" data-act="cityBack">₵ Dispatch</button><span class="md-tabs"><span class="ed-dim">one route for every truck</span></span>';
+    else {
+      html += '<span class="md-tabs" style="margin-left:0">';
+      tr.tabs.forEach(function (t, i) {
+        html += '<button class="nt tk' + (i === tr.active ? ' on' : '') + (t.lit ? ' lit' : '') + '" data-truck="' + i + '">' + esc(t.label) + ' <span class="ed-dim">' + t.size + '</span></button>';
+      });
+      html += '</span>';
+      if (tr.tabs.length > 1) html += '<span class="lg-meta">L1+◀▶ switch</span>';
+    }
+    this.q.modes.innerHTML = html;
   };
 
   Editor.prototype.renderModes = function (vm) {
@@ -294,6 +323,23 @@
   function fmt(n) { return String(Math.floor(n + 1e-9)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
   function x2(v) { return '×' + v.toFixed(2); }
 
+  /** The Dispatch tab: the city route and what it earns. */
+  function dispatchHtml(d, sel) {
+    if (!d) return '';
+    if (!d.open) return '<div class="ed-empty">Dispatch opens after you clear ' + esc(d.after) + '. Then your trucks can sell what the bays make to the city.</div>';
+    var status = d.ok ? '<b class="ok">+' + fmt(d.rate) + '</b><i>cr/h</i>' : d.empty ? '<b>—</b><i>no route</i>' : '<b class="bad">0</b><i>faults</i>';
+    var what = d.ok ? d.onTime + ' on time, ' + d.late + ' late in a sample hour' : d.empty ? 'Tap to write one program for the whole fleet' : (d.line >= 0 ? 'line ' + (d.line + 1) + ': ' : '') + d.msg;
+    var html = '<div class="lg-row lg-city' + (sel === 0 ? ' sel' : '') + '" data-lrow="0"><span class="lg-code tr">R</span><span class="lg-name">City route <span class="ed-dim">' + d.size + ' lines</span><i>' + esc(what) + '</i></span><span class="lg-val">' + status + '</span></div>';
+    html += '<div class="lg-row"><span class="lg-name">Fleet ' + d.fleet + (d.fleet > 1 ? ' trucks' : ' truck') + ' · bed ' + d.bed + ' cells<i>Buy more in Upgrades</i></span></div>';
+    html += '<div class="lg-row"><span class="lg-name">Supply ' + fmt(d.cellsPerHour) + ' cells/h<i>';
+    html += ['cyan', 'magenta', 'amber', 'lime'].map(function (c) { return '<span class="c-' + c + '-t">' + Math.round(d.supply[c] || 0) + '</span>'; }).join(' · ');
+    html += '  from your bays</i></span></div>';
+    html += '<div class="lg-row"><span class="lg-name">Today the city wants<i>';
+    html += ['cyan', 'magenta', 'amber', 'lime'].map(function (c) { return '<span class="c-' + c + '-t">' + c + ' ' + Math.round((d.demand[c] || 0) * 100) + '%</span>'; }).join(' · ');
+    html += '</i></span></div>';
+    return html;
+  }
+
   /** The Ledger on the bottom screen: Bays and Upgrades lists, or the Shift report. */
   Editor.prototype.renderLedger = function (vm) {
     var lg = vm.ledger, q = this.q, html = '';
@@ -313,13 +359,14 @@
       return;
     }
     html += '<div class="lg-tabs">';
-    ['Bays', 'Upgrades'].forEach(function (t, i) {
-      var on = (i === 0 ? 'bays' : 'upgrades') === lg.tab;
-      html += '<button class="md' + (on ? ' on' : '') + '" data-ltab="' + i + '">' + t + '</button>';
+    var names = { bays: 'Bays', upgrades: 'Upgrades', dispatch: 'Dispatch' };
+    (lg.tabs || ['bays', 'upgrades']).forEach(function (t, i) {
+      html += '<button class="md' + (t === lg.tab ? ' on' : '') + '" data-ltab="' + i + '">' + names[t] + '</button>';
     });
     html += '<span class="lg-meta">' + lg.bays + '/' + lg.bayCap + ' bays · ' + lg.shift + 'h shift</span></div>';
     html += '<div class="lg-list">';
-    if (lg.tab === 'bays') {
+    if (lg.tab === 'dispatch') html += dispatchHtml(lg.dispatch, lg.sel);
+    else if (lg.tab === 'bays') {
       if (!lg.rows.length) html += '<div class="ed-empty">Clear a contract and it can run in a bay here, earning credits even while the handheld sleeps.</div>';
       lg.rows.forEach(function (r, i) {
         var f = 'speed ' + x2(r.speed) + ' · lean ' + x2(r.lean) + (r.tidy !== null ? ' · tidy ' + x2(r.tidy) : '');
@@ -332,14 +379,16 @@
     } else {
       lg.rows.forEach(function (r, i) {
         var p = lg.hold && lg.hold.i === i ? lg.hold.p : 0;
-        html += '<div class="lg-row lg-up' + (i === lg.sel ? ' sel' : '') + (r.afford ? ' ok' : '') + '" data-lrow="' + i + '" data-hold="' + i + '">' +
+        html += '<div class="lg-row lg-up' + (i === lg.sel ? ' sel' : '') + (r.afford ? ' ok' : '') + (r.locked ? ' locked' : '') + '" data-lrow="' + i + '" data-hold="' + i + '">' +
           '<b class="lg-fill" style="width:' + Math.round(p * 100) + '%"></b>' +
-          '<span class="lg-name">' + esc(r.name) + ' <span class="ed-dim">' + r.level + '/' + r.max + '</span><i>' + esc(r.now) + (r.next ? ' → ' + esc(r.next) : ' · top level') + '</i></span>' +
+          '<span class="lg-name">' + esc(r.name) + ' <span class="ed-dim">' + r.level + '/' + r.max + '</span><i>' + (r.locked ? 'Opens after Night Audit' : esc(r.now) + (r.next ? ' → ' + esc(r.next) : ' · top level')) + '</i></span>' +
           '<span class="lg-val">' + (r.cost === null ? '—' : fmt(r.cost)) + '<i>' + (r.cost === null ? '' : 'cr') + '</i></span></div>';
       });
     }
     html += '</div>';
-    html += lg.tab === 'bays'
+    html += lg.tab === 'dispatch'
+      ? '<div class="lg-foot"><button class="tile lg-go" data-act="lopen">A  Edit route</button><button class="tile" data-act="board">B  Contracts</button></div>'
+      : lg.tab === 'bays'
       ? '<div class="lg-foot"><button class="tile" data-act="lopen">Start  Open contract</button><button class="tile" data-act="board">B  Contracts</button></div>'
       : '<div class="lg-foot"><span class="ed-dim">Press and hold to buy (hold A).</span><button class="tile" data-act="board">B  Contracts</button></div>';
     q.ledger.innerHTML = html;
@@ -355,7 +404,7 @@
   Editor.prototype.renderLedgerMsg = function (vm) {
     var q = this.q, f = vm.flash;
     q.msg.className = 'ed-msg ' + (f ? f.kind : '');
-    q.msg.textContent = f ? f.msg : vm.ledger.report ? 'A or tap Continue.' : vm.ledger.tab === 'bays' ? 'Tap a contract, tap again to move it in or out of a bay.' : 'Upgrades grow the business. They never change a contract.';
+    q.msg.textContent = f ? f.msg : vm.ledger.report ? 'A or tap Continue.' : vm.ledger.tab === 'bays' ? 'Tap a contract, tap again to move it in or out of a bay.' : vm.ledger.tab === 'dispatch' ? 'Trucks sell your bays’ cells to the city for more than spot.' : 'Upgrades grow the business. They never change a contract.';
   };
 
   root.OvershiftEditor = Editor;

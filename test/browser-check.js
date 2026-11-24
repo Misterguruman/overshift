@@ -50,9 +50,11 @@ const base = process.argv[3] || 'http://127.0.0.1:8765/index.html';
     await tp.screenshot({ path: `${out}/tut-welcome-desktop.png` });
     await tp.click('.tc-go');
     const steps = [];
-    for (let k = 0; k < 2; k++) {
-      await tp.waitForSelector('.ed-pal .coach-hl', { timeout: 3000 });
-      steps.push(await tp.evaluate(() => document.querySelector('.coach-hl').textContent));
+    for (const want of ['GRAB', 'SHIP']) {
+      // wait for the coach to move on: the editor redraws on the next frame, slower on CI
+      await tp.waitForFunction((w) => { const h = document.querySelector('.ed-pal .coach-hl'); return h && h.textContent.trim() === w; }, want, { timeout: 3000 }).catch(() => {});
+      steps.push(await tp.evaluate(() => { const h = document.querySelector('.ed-pal .coach-hl'); return h ? h.textContent.trim() : 'none'; }));
+      const k = steps.length - 1;
       if (k === 0) await tp.screenshot({ path: `${out}/tut-grab-desktop.png` });
       await tp.click('.ed-pal .coach-hl');
     }
@@ -68,6 +70,7 @@ const base = process.argv[3] || 'http://127.0.0.1:8765/index.html';
     await tp.waitForTimeout(200);
     await tp.screenshot({ path: `${out}/tut-cleared-desktop.png` });
     await tp.keyboard.press('KeyZ'); // A: next contract
+    await tp.waitForFunction(() => Overshift.game.save.tut.state !== 'active', null, { timeout: 3000 }).catch(() => {});
     await tp.waitForTimeout(200);
     const end = await tp.evaluate(() => ({ state: Overshift.game.save.tut.state, level: Overshift.game.level.id, coach: !!document.querySelector('.ed-coach.on') }));
     console.log('tutorial finished:', JSON.stringify(end));
@@ -91,6 +94,11 @@ const base = process.argv[3] || 'http://127.0.0.1:8765/index.html';
     await bottom.setViewportSize({ width: 620, height: 540 });
     await bottom.goto(base + '?screen=editor', { waitUntil: 'load' });
     await bottom.waitForSelector('.ed-tipping .tc-go', { timeout: 5000 });
+    // the bottom screen redraws from the host's snapshot a frame or two later, so wait on both
+    const cardGone = () => Promise.all([
+      top.waitForFunction(() => !Overshift.game.tipCard, null, { timeout: 3000 }),
+      bottom.waitForFunction(() => !document.querySelector('.ed-tipping'), null, { timeout: 3000 }),
+    ]);
     const shot = async name => { await top.waitForTimeout(250); await top.screenshot({ path: `${out}/${name}-thor-top.png` }); await bottom.screenshot({ path: `${out}/${name}-thor-bottom.png` }); };
     await shot('tut-welcome');
     await top.keyboard.press('KeyZ'); // A on the top screen starts it
@@ -99,7 +107,8 @@ const base = process.argv[3] || 'http://127.0.0.1:8765/index.html';
     console.log('two-screen coach on the bottom screen:', edText);
     await shot('tut-grab');
     await bottom.click('.ed-coach .tc-skip');
-    await top.waitForTimeout(200);
+    await top.waitForFunction(() => Overshift.game.save.tut.state !== 'active', null, { timeout: 3000 }).catch(() => {});
+    await bottom.waitForFunction(() => !document.querySelector('.ed-coach.on'), null, { timeout: 3000 }).catch(() => {});
     const skipped = await top.evaluate(() => Overshift.game.save.tut.state);
     console.log('Skip on the bottom screen:', skipped);
     if (skipped !== 'skipped') problems++;
@@ -110,11 +119,13 @@ const base = process.argv[3] || 'http://127.0.0.1:8765/index.html';
       if (id !== tip) { problems++; console.log('expected tip', tip, 'got', id); }
       await shot('tip-' + tip);
       await bottom.click('.tc-go'); if (tip === 'floor') await bottom.click('.tc-go');
+      await cardGone();
     }
     await top.evaluate(() => { const g = Overshift.game; g.save.cleared['clock-in'] = true; g.overlay = 'board'; g.act({ type: 'ledger' }); });
     await bottom.waitForSelector('.ed-tipping .tc-go', { timeout: 3000 });
     await shot('tip-ledger');
     await bottom.click('.tc-go');
+    await cardGone();
     await top.evaluate(() => { const g = Overshift.game; g.overlay = 'board'; g.boardSel = 0; g.changed(); });
     await shot('board-tutorial');
     await t2.close();

@@ -147,7 +147,67 @@ const base = process.argv[3] || 'http://127.0.0.1:8765/index.html';
     await p5.waitForTimeout(200);
     await p5.screenshot({ path: `${out}/ch2-board.png` });
     console.log('chapter 2 references ran in browser');
+
+    // the Ledger: the ten floors just cleared now earn in bays
+    await p5.evaluate(() => { const g = Overshift.game; g.overlay = 'board'; g.boardSel = 0; g.changed(); });
+    await p5.keyboard.press('KeyQ'); // L1: the board's first page is the Ledger
+    await p5.waitForTimeout(250);
+    const lg = await p5.evaluate(() => ({ overlay: Overshift.game.overlay, rows: document.querySelectorAll('.ed-ledger .lg-row').length, credits: Overshift.game.save.ledger.credits }));
+    console.log('Ledger page:', JSON.stringify(lg));
+    if (lg.overlay !== 'ledger' || lg.rows !== 10 || !(lg.credits > 0)) problems++;
+    await p5.screenshot({ path: `${out}/ledger-bays.png` });
+    // tap a row twice: select, then move it out of its bay
+    const inBay0 = await p5.evaluate(() => Overshift.game.save.ledger.bays.length);
+    const idx = await p5.evaluate(() => [...document.querySelectorAll('.ed-ledger .lg-row')].findIndex(e => e.classList.contains('in')));
+    await p5.evaluate(i => { const g = Overshift.game; g.ledgerSel = i === 0 ? 1 : 0; g.changed(); }, idx);
+    await p5.waitForTimeout(100);
+    await p5.click(`.ed-ledger .lg-row >> nth=${idx}`);
+    await p5.waitForTimeout(100);
+    await p5.click(`.ed-ledger .lg-row >> nth=${idx}`);
+    await p5.waitForTimeout(100);
+    const inBay1 = await p5.evaluate(() => Overshift.game.save.ledger.bays.length);
+    console.log('tapping a contract twice moves it out of its bay:', inBay1 === inBay0 - 1, inBay0, '->', inBay1);
+    if (inBay1 !== inBay0 - 1) problems++;
+    // Upgrades tab: press and hold to buy
+    await p5.click('.ed-ledger [data-ltab="1"]');
+    await p5.evaluate(() => { Overshift.game.save.ledger.credits = 5000; Overshift.game.changed(); });
+    await p5.waitForTimeout(150);
+    const row = await p5.$('.ed-ledger .lg-row >> nth=0');
+    const box = await row.boundingBox();
+    await p5.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await p5.mouse.down();
+    await p5.waitForTimeout(250);
+    await p5.screenshot({ path: `${out}/ledger-upgrades-holding.png` });
+    await p5.waitForTimeout(450);
+    await p5.mouse.up();
+    const bought = await p5.evaluate(() => Overshift.game.save.ledger.up.bays);
+    console.log('press and hold bought a bay:', bought === 1);
+    if (bought !== 1) problems++;
+    await p5.waitForTimeout(150);
+    await p5.screenshot({ path: `${out}/ledger-upgrades.png` });
+    // time away: move the stored time back 3 hours and settle as on resume
+    await p5.evaluate(() => { const g = Overshift.game; g.ledgerPause(); g.save.ledger.lastSeen -= 3 * 3600 * 1000; g.ledgerResume(); });
+    await p5.waitForTimeout(2800);
+    const rep = await p5.evaluate(() => Overshift.game.overlay);
+    console.log('3 hours away shows the Shift report:', rep === 'report');
+    if (rep !== 'report') problems++;
+    await p5.screenshot({ path: `${out}/ledger-shift-report.png` });
+    await p5.keyboard.press('KeyZ');
     await c5.close();
+  }
+  // the Ledger at the Thor's two screen shapes
+  for (const [name, w, h] of [['thor-top', 960, 540], ['thor-bottom', 620, 540], ['phone-portrait', 390, 844]]) {
+    const c6 = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2 });
+    const p6 = await c6.newPage(); watch(p6, 'ledger-' + name);
+    await p6.goto(base + '?unlock=all', { waitUntil: 'load' });
+    await p6.evaluate(() => {
+      const g = Overshift.game, all = OvershiftGame.LEVELS;
+      for (const lv of all.slice(0, 13)) OvershiftLedger.recordClear(g.save, all, lv, OvershiftLedger.parRun(lv));
+      g.save.ledger.credits = 2345; g.openLedger(); g.changed();
+    });
+    await p6.waitForTimeout(250);
+    await p6.screenshot({ path: `${out}/ledger-${name}.png` });
+    await c6.close();
   }
 
   // two windows: deck host + remote editor over BroadcastChannel

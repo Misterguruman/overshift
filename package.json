@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node test/run-tests.js",
     "build": "node tools/build.js",
-    "serve": "http-server web -p 8765 -c-1"
+    "serve": "http-server web -p 8765 -c-1",
+    "curve": "node tools/curve.js"
   },
   "devDependencies": {
     "http-server": "14.1.1",

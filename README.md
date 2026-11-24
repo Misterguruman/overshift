@@ -12,6 +12,9 @@ The deck runs on the top screen; you write Servo's program on the bottom screen.
   - `?unlock=all` opens every contract
 - `web/js/core.js` contracts, program model and the Servo interpreter (pure, runs in node too)
 - `web/js/game.js` the game host: editing, running, step back, scoring, saves, button handling
+- `web/js/ledger.js` the Ledger's rules: bay earnings, time-away pay, upgrades, save migration (pure);
+  `ledgergame.js` its host logic and buttons; `ledgerdeck.js` its top-screen tower and Shift report
+- `tools/curve.js` (`npm run curve`) prints the Ledger's economy curve from the real contract data
 - `web/js/deck.js` the top-screen canvas view; `editor.js` the bottom-screen editor; `input.js`
   keyboard, Gamepad API and shell buttons; `audio.js` synthesized sound; `main.js` screen roles and transport
 - `dist/overshift.html` one self-contained file of the whole game (made by `node tools/build.js`)
@@ -79,9 +82,19 @@ certificate on every run from one repository secret, **`OVERSHIFT_SIGNING_PASSWO
 - Size and Cycles, Cleared / Lean / Fast chips, best scores, contracts unlock in order, autosave.
 - Gamepad, touch and keyboard. Trace-back: tap a shipped or scrapped cell (or right stick + R3).
 - Synthesized sound: each shipped cell plays a note pitched by its charge.
+- The Ledger (business layer, slice 1): every cleared contract can run in a bay and earn credits,
+  Base x Speed x Lean x Tidy x Overclock, where each factor is par over your score (a par solution
+  earns exactly Base). First clears pay 4 hours of Base and each Lean or Fast chip 2 hours, once.
+  Time away pays when the app comes back, up to one shift (8 hours to start), with a Shift report
+  after more than 5 minutes; a clock moved backwards pays nothing. Upgrades: Bays (3 to 12),
+  Overclock (+10% a level) and Shift length (8 to 24 hours). No upgrade changes a contract.
+  Older saves are migrated on first load: clears and chips earned so far are paid once.
 
 ## Differences from the design doc, for now
 
 - One autosaved program per contract instead of 3 save slots.
+- With one save slot, a bay runs the best-earning clear of its contract, kept when you clear it.
+- The Ledger has the Bays and Upgrades tabs only; Dispatch, trucks, requisitions and tier unlocks
+  come in later slices. Bay windows show a moving belt, not a replay of your solution.
 - L3 opens the contract board (the doc has it toggle the order ticket, which is always shown here).
 - No drag-to-insert, long-press menu, ambience pad, rain, haptics or narrow two-row deck layout yet.

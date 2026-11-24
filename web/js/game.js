@@ -40,9 +40,11 @@
     this.overlay = null;
     this.boardSel = 0;
     this.version = 0;
+    this.now = opts.now || function () { return Date.now(); };
     this.selectLevel(Math.min(this.save.current || 0, LV.length - 1), true);
     if (!opts.skipBoard) this.overlay = 'board';
     this.boardSel = this.level.index;
+    if (this.initLedger) this.initLedger();
   }
 
   Game.prototype.onChange = function (fn) { this.listeners.push(fn); };
@@ -295,7 +297,8 @@
   Game.prototype.pause = function () { if (this.mode === 'run' || this.mode === 'fast') this.mode = 'pause'; };
 
   Game.prototype.tick = function (dt) {
-    if (this.mode !== 'run' && this.mode !== 'fast') return false;
+    var ledger = this.ledgerTick ? this.ledgerTick(dt) : false;
+    if (this.mode !== 'run' && this.mode !== 'fast') return ledger;
     this.acc += dt;
     var interval = this.mode === 'fast' ? FAST_INTERVAL : RUN_INTERVAL;
     var moved = false, guard = 0;
@@ -304,7 +307,7 @@
       this.stepOnce();
       moved = true;
     }
-    return moved;
+    return moved || ledger;
   };
 
   Game.prototype.finish = function () {
@@ -328,6 +331,7 @@
       if (best.cycles === undefined || ev.cycles < best.cycles) best.cycles = ev.cycles;
       if (ev.parts !== undefined && (best.parts === undefined || ev.parts < best.parts)) best.parts = ev.parts;
       this.save.best[id] = best;
+      if (this.ledgerOnClear) ev.ledger = this.ledgerOnClear(ev);
       this.persist();
       ev.firstClear = firstClear;
       this.overlay = 'cleared';
@@ -408,6 +412,7 @@
     var press = phase === 'down' || phase === 'repeat';
     var running = this.mode !== 'edit';
 
+    if ((this.overlay === 'ledger' || this.overlay === 'report') && this.ledgerButton) { this.ledgerButton(b, phase); return; }
     if (this.overlay === 'board') {
       if (!press) return;
       var n = LV.length, cols = 5, per = PER_CHAPTER;
@@ -415,7 +420,7 @@
       if (b === 'left') this.boardSel = (this.boardSel + n - 1) % n;
       else if (b === 'right') this.boardSel = (this.boardSel + 1) % n;
       else if (b === 'up' || b === 'down') this.boardSel = Math.min(n - 1, page + (this.boardSel - page + cols) % per);
-      else if ((b === 'L1' || b === 'R1') && phase === 'down') this.boardSel = (this.boardSel + (b === 'L1' ? n - per : per)) % n;
+      else if ((b === 'L1' || b === 'R1') && phase === 'down') this.flipBoardPage(b === 'L1' ? -1 : 1);
       else if (b === 'A' && phase === 'down') this.selectLevel(this.boardSel);
       else if ((b === 'B' || b === 'L3' || b === 'start') && phase === 'down') this.overlay = null;
       return;
@@ -508,6 +513,12 @@
     }
   };
 
+  /** L1 / R1 on the contract board: the next chapter's page (ledgergame.js adds the Ledger page). */
+  Game.prototype.flipBoardPage = function (dir) {
+    var n = LV.length;
+    this.boardSel = (this.boardSel + (dir < 0 ? n - PER_CHAPTER : PER_CHAPTER)) % n;
+  };
+
   Game.prototype.nextLevel = function () {
     var i = this.level.index + 1;
     if (i < LV.length) this.selectLevel(i);
@@ -540,7 +551,9 @@
       case 'next': this.nextLevel(); break;
       case 'close': this.overlay = null; break;
       case 'mute': this.sfx.toggle && this.sfx.toggle(); break;
-      default: if (this.isFloor()) this.floorAct(a);
+      default:
+        if (this.ledgerAct && this.ledgerAct(a)) break;
+        if (this.isFloor()) this.floorAct(a);
     }
     this.changed();
   };
@@ -576,6 +589,7 @@
       muted: !!(this.sfx.muted)
     };
     if (this.isFloor()) this.floorViewModel(vm);
+    if ((this.overlay === 'ledger' || this.overlay === 'report') && this.ledgerViewModel) vm.ledger = this.ledgerViewModel();
     return vm;
   };
 

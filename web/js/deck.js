@@ -150,6 +150,11 @@
     g.beginPath(); g.rect(0, 0, W, H); g.clip();
 
     this.drawBackdrop();
+    if ((game.overlay === 'ledger' || game.overlay === 'report') && this.drawLedgerScene) {
+      this.drawLedgerScene(game, dt);
+      g.restore();
+      return;
+    }
     this.drawHeader(lv, game);
     if (game.isFloor && game.isFloor() && this.drawFloorScene) this.drawFloorScene(dt);
     else {
@@ -437,11 +442,12 @@
     this.text('Cycles ' + r.cycles + '  (par ' + lv.parCycles + ')', W / 2 + 200, 550, 30, fast ? COL.magenta : INK, 'center', '600');
     var tip = lean && fast ? 'Both chips. Clean shift.' : 'Beat par on Size or Cycles for a bonus chip.';
     if (r.parts !== undefined) tip = 'Parts ' + r.parts + ' (par ' + lv.parParts + ')   ·   ' + tip;
-    this.text(tip, W / 2, 610, 24, DIM, 'center');
+    this.text(tip, W / 2, 600, 24, DIM, 'center');
+    if (r.ledger && this.clearedPayLine) this.clearedPayLine(r.ledger, W / 2, 646);
     var all = game.constructor.LEVELS || C.LEVELS;
     var last = lv.index === all.length - 1;
-    this.button(last ? 'A  Contracts' : 'A  Next contract', W / 2 - 330, 680, 320, 76, GREEN, { type: 'next' }, true);
-    this.button('B  Keep editing', W / 2 + 10, 680, 320, 76, INK, { type: 'close' });
+    this.button(last ? 'A  Contracts' : 'A  Next contract', W / 2 - 330, 700, 320, 76, GREEN, { type: 'next' }, true);
+    this.button('B  Keep editing', W / 2 + 10, 700, 320, 76, INK, { type: 'close' });
   };
 
   Deck.prototype.drawBoard = function (game) {
@@ -451,9 +457,11 @@
     var page = Math.floor(game.boardSel / per), pages = Math.ceil(all.length / per);
     var titles = ['NIGHT SHIFT', 'JUNCTION FLOOR'];
     this.text((titles[page] || 'CHAPTER ' + (page + 1)) + '  ·  CONTRACT BOARD', 140, 140, 40, COL.cyan, 'left', '700');
-    this.text('D-pad pick · A open · L1/R1 chapter · B close', W - 210, 140, 22, DIM, 'right');
+    this.text('D-pad pick · A open · L1/R1 page · B close', W - 210, 140, 22, DIM, 'right');
+    var tab0 = 140;
+    if (this.drawLedgerTab) tab0 = this.drawLedgerTab(game, 140, 930);
     for (var pg = 0; pg < pages; pg++) {
-      var tx = 140 + pg * 270, on = pg === page;
+      var tx = tab0 + pg * 270, on = pg === page;
       this.roundRect(tx, 930, 250, 56, 10);
       this.g.fillStyle = on ? 'rgba(34,232,255,0.14)' : 'rgba(255,255,255,0.02)'; this.g.fill();
       this.g.strokeStyle = on ? COL.cyan : FAINT; this.g.lineWidth = 2; this.g.stroke();

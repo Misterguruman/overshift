@@ -62,6 +62,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        deck.callGame("Overshift.onResume && Overshift.onResume()") // the Ledger pays the time away
         displays.registerDisplayListener(displayListener, main)
         refreshScreens()
     }

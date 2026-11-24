@@ -153,6 +153,36 @@ body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user
 .pt-rm { color: var(--red) !important; }
 .pt-n { font-size: .72em; padding: .1em .2em; }
 .pt-clr { margin-top: auto; color: var(--dim) !important; justify-content: center; }
+
+/* ---- the Ledger (bottom screen) ---- */
+.ed-ledger { display: none; }
+.ed-cr { color: var(--amber) !important; }
+.ed-ledgering .ed-main, .ed-ledgering .ed-build, .ed-ledgering .ed-modes, .ed-ledgering .ed-transport,
+.ed-ledgering [data-act=undo], .ed-ledgering [data-act=redo] { display: none !important; }
+.ed-ledgering .ed-ledger { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.ed-ledgering .ed-title b { color: var(--amber); }
+.lg-tabs { display: flex; align-items: center; gap: .3em; padding: .25em .4em; border-bottom: 1px solid var(--faint); flex: 0 0 auto; }
+.lg-tabs .md.on { border-color: var(--amber); color: var(--amber) !important; }
+.lg-meta { margin-left: auto; font-size: .72em; color: var(--dim); white-space: nowrap; }
+.lg-sum { padding: .5em .6em; font-size: .85em; line-height: 1.35; border-bottom: 1px solid var(--faint); }
+.lg-sum b { color: var(--green); }
+.lg-list { flex: 1 1 auto; overflow-y: auto; min-height: 0; padding: .2em 0; touch-action: pan-y; scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
+.lg-row { position: relative; display: flex; align-items: center; gap: .5em; min-height: 2.3em; padding: .15em .5em; border-left: 3px solid transparent; overflow: hidden; }
+.lg-row.sel { background: #0b1828; border-left-color: var(--amber); }
+.lg-row.in .lg-bay { color: var(--green); }
+.lg-code { flex: 0 0 2.6em; color: var(--cyan); font-weight: 700; font-size: .85em; }
+.lg-code.fl { color: var(--amber); }
+.lg-name { flex: 1 1 auto; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
+.lg-name i, .lg-val i { display: block; font-style: normal; font-weight: 500; font-size: .68em; color: var(--dim); overflow: hidden; text-overflow: ellipsis; }
+.lg-val { flex: 0 0 auto; text-align: right; font-weight: 700; color: var(--amber); position: relative; }
+.lg-bay { flex: 0 0 3.6em; text-align: right; font-size: .72em; color: var(--dim); font-weight: 600; }
+.lg-up .lg-val { color: var(--dim); }
+.lg-up.ok .lg-val { color: var(--amber); }
+.lg-fill { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,179,31,.22); pointer-events: none; }
+.lg-foot { flex: 0 0 auto; display: flex; align-items: center; gap: .35em; padding: .35em; border-top: 1px solid var(--faint); }
+.lg-foot .tile { flex: 1; padding: .55em 0; }
+.lg-foot .ed-dim { flex: 1; font-size: .74em; }
+.lg-go { color: var(--green) !important; border-color: var(--green) !important; }
 </style>
 </head>
 <body>
@@ -201,6 +231,8 @@ body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user
         </div>
       </div>
       <p style="margin-top:10px">Tap a shipped or scrapped cell on the deck to jump to the line that moved it. Swipe a line left to delete it.</p>
+      <h2 style="margin-top:12px">THE LEDGER</h2>
+      <p>Every cleared contract can run in a bay and earn credits, even while the game is closed (up to one shift, 8 hours to start). A solution at par earns the contract's base rate; fewer cycles and fewer lines earn more. The Ledger is the first page of the contract board: L1 / R1 flip pages (Q / E), or tap ₵. L2 / R2 or ← → switch between Bays and Upgrades, ↑ ↓ pick, A moves a contract in or out of a bay, Start opens it to improve it, hold A to buy an upgrade, B goes back to the board. Upgrades grow the business and never change a contract.</p>
       <h2 style="margin-top:12px">CHAPTER 2 · JUNCTION FLOOR</h2>
       <p>Build mode: the d-pad moves the tile cursor, hold X + ← → picks a part, tap X turns it, A places (hold A and move to draw a belt), B removes, Y undoes. Tap tiles on either screen to place. Program mode: the editor works as in chapter 1 on one node; L1 + ← → or a tab switches nodes. A belt takes cells from its back and sides; a node only from its back. A node shows an arrow on each side its program sends cells out of, and a ? until it has a program: put the cursor on it and press L3 (or tap the tip) to program it.</p>
     </div>
@@ -209,12 +241,15 @@ body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user
 </div>
 <script src="js/core.js"></script>
 <script src="js/floor.js"></script>
+<script src="js/ledger.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/input.js"></script>
 <script src="js/game.js"></script>
 <script src="js/floorgame.js"></script>
+<script src="js/ledgergame.js"></script>
 <script src="js/deck.js"></script>
 <script src="js/floordeck.js"></script>
+<script src="js/ledgerdeck.js"></script>
 <script src="js/editor.js"></script>
 <script src="js/main.js"></script>
 </body>

@@ -22,6 +22,7 @@
     this.el.innerHTML =
       '<header class="ed-head">' +
       '  <button class="ed-icon" data-act="board" title="Contracts (L3)">☰</button>' +
+      '  <button class="ed-icon ed-cr" data-act="ledger" title="Ledger (L1 on the contract board)">₵</button>' +
       '  <div class="ed-title"></div>' +
       '  <button class="ed-icon" data-act="undo" title="Undo (Y)">↶</button>' +
       '  <button class="ed-icon" data-act="redo" title="Redo (L1+Y)">↷</button>' +
@@ -37,6 +38,7 @@
       '    <div class="ed-held"></div>' +
       '  </div>' +
       '</div>' +
+      '<div class="ed-ledger"></div>' +
       '<div class="ed-msg"></div>' +
       '<div class="ed-transport">' +
       '  <button data-act="back"><b>⇤</b><i>Back</i></button>' +
@@ -62,7 +64,8 @@
       mapbox: this.el.querySelector('.ed-mapbox'),
       map: this.el.querySelector('.ed-map'),
       parts: this.el.querySelector('.ed-parts'),
-      main: this.el.querySelector('.ed-main')
+      main: this.el.querySelector('.ed-main'),
+      ledger: this.el.querySelector('.ed-ledger')
     };
     this.bind();
     var self = this;
@@ -93,14 +96,20 @@
   };
 
   Editor.prototype.bind = function () {
-    var self = this, down = null;
+    var self = this, down = null, holding = false;
+    function endHold() { if (holding) { holding = false; self.dispatch({ type: 'hold', on: false }); } }
     // never let taps take keyboard focus (gamepad input stays with the game)
     this.el.addEventListener('mousedown', function (e) { e.preventDefault(); });
     this.el.addEventListener('pointerdown', function (e) {
       down = { x: e.clientX, y: e.clientY, t: Date.now(), target: e.target };
+      // press and hold an upgrade to buy it
+      var h = e.target.closest && e.target.closest('[data-hold]');
+      if (h) { holding = true; self.dispatch({ type: 'hold', i: +h.dataset.hold, on: true }); }
     });
-    this.el.addEventListener('pointercancel', function () { down = null; });
+    this.el.addEventListener('pointercancel', function () { down = null; endHold(); });
+    this.el.addEventListener('pointerleave', endHold);
     this.el.addEventListener('pointerup', function (e) {
+      if (holding) { endHold(); down = null; return; }
       if (!down) return;
       var dx = e.clientX - down.x, dy = e.clientY - down.y;
       var start = down.target; down = null;
@@ -108,9 +117,11 @@
       // swipe a line left to delete it
       if (row && dx < -60 && Math.abs(dy) < 40 && row.dataset.i >= 0) { self.dispatch({ type: 'delete', i: +row.dataset.i }); return; }
       if (Math.abs(dx) > 12 || Math.abs(dy) > 12) return; // a scroll, not a tap
-      var t = start.closest && start.closest('[data-act],[data-pal],[data-cycle],[data-tool],[data-tile],[data-part],[data-fmode],[data-tab],.row');
+      var t = start.closest && start.closest('[data-act],[data-pal],[data-cycle],[data-tool],[data-tile],[data-part],[data-fmode],[data-tab],[data-ltab],[data-lrow],.row');
       if (!t) return;
       if (t.dataset.act) { self.dispatch({ type: t.dataset.act }); return; }
+      if (t.dataset.ltab !== undefined) { self.dispatch({ type: 'ltab', i: +t.dataset.ltab }); return; }
+      if (t.dataset.lrow !== undefined) { self.dispatch({ type: 'lrow', i: +t.dataset.lrow }); return; }
       if (t.dataset.tile) { var xy = t.dataset.tile.split(','); self.dispatch({ type: 'tile', x: +xy[0], y: +xy[1] }); return; }
       if (t.dataset.part !== undefined) { self.dispatch({ type: 'part', i: +t.dataset.part }); return; }
       if (t.dataset.fmode) { self.dispatch({ type: 'fmode', m: t.dataset.fmode }); return; }
@@ -141,6 +152,8 @@
     var q = this.q, lv = vm.level;
     var editing = vm.mode === 'edit' || vm.mode === 'done' || vm.mode === 'pause';
     this.el.dataset.mode = vm.mode;
+    this.el.classList.toggle('ed-ledgering', !!vm.ledger);
+    if (vm.ledger) { this.renderLedger(vm); return; }
 
     var fl = vm.floor, building = !!fl && fl.fmode === 'build';
     this.el.classList.toggle('ed-floor', !!fl);
@@ -276,6 +289,73 @@
     parts += '<div class="ed-dim pt-n">Parts ' + fl.parts_n + ' · par ' + fl.parParts + '</div>';
     parts += '<button class="tile pt pt-clr" data-act="clearFloor">Clear floor</button>';
     this.q.parts.innerHTML = parts;
+  };
+
+  function fmt(n) { return String(Math.floor(n + 1e-9)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  function x2(v) { return '×' + v.toFixed(2); }
+
+  /** The Ledger on the bottom screen: Bays and Upgrades lists, or the Shift report. */
+  Editor.prototype.renderLedger = function (vm) {
+    var lg = vm.ledger, q = this.q, html = '';
+    q.title.innerHTML = '<b>₵</b> ' + fmt(lg.credits) + ' <span class="ed-dim">· ' + fmt(lg.rate) + ' cr/h</span>';
+    if (lg.report) {
+      var rep = lg.report, welcome = rep.kind === 'welcome';
+      html += '<div class="lg-sum">' + (welcome ? 'The Ledger is open. Your clears so far paid <b>' + fmt(rep.total) + ' cr</b>.' : 'Shift report: <b>+' + fmt(rep.total) + ' cr</b> while you were away.') + '</div>';
+      html += '<div class="lg-list">';
+      rep.rows.forEach(function (r) {
+        html += '<div class="lg-row"><span class="lg-code' + (r.floor ? ' fl' : '') + '">' + esc(r.code) + '</span><span class="lg-name">' + esc(r.name) + '</span><span class="lg-val">' + (welcome ? fmt(r.rate) + ' cr/h' : '+' + fmt(r.cr)) + '</span></div>';
+      });
+      if (!rep.rows.length) html += '<div class="ed-empty">No contract is in a bay yet.</div>';
+      html += '</div>';
+      html += '<div class="lg-foot"><button class="tile lg-go" data-act="reportClose">A  Continue</button></div>';
+      q.ledger.innerHTML = html;
+      this.renderLedgerMsg(vm);
+      return;
+    }
+    html += '<div class="lg-tabs">';
+    ['Bays', 'Upgrades'].forEach(function (t, i) {
+      var on = (i === 0 ? 'bays' : 'upgrades') === lg.tab;
+      html += '<button class="md' + (on ? ' on' : '') + '" data-ltab="' + i + '">' + t + '</button>';
+    });
+    html += '<span class="lg-meta">' + lg.bays + '/' + lg.bayCap + ' bays · ' + lg.shift + 'h shift</span></div>';
+    html += '<div class="lg-list">';
+    if (lg.tab === 'bays') {
+      if (!lg.rows.length) html += '<div class="ed-empty">Clear a contract and it can run in a bay here, earning credits even while the handheld sleeps.</div>';
+      lg.rows.forEach(function (r, i) {
+        var f = 'speed ' + x2(r.speed) + ' · lean ' + x2(r.lean) + (r.tidy !== null ? ' · tidy ' + x2(r.tidy) : '');
+        html += '<div class="lg-row' + (i === lg.sel ? ' sel' : '') + (r.bay >= 0 ? ' in' : '') + '" data-lrow="' + i + '">' +
+          '<span class="lg-code' + (r.floor ? ' fl' : '') + '">' + esc(r.code) + '</span>' +
+          '<span class="lg-name">' + esc(r.name) + '<i>' + f + '</i></span>' +
+          '<span class="lg-val">' + fmt(r.rate) + '<i>cr/h</i></span>' +
+          '<span class="lg-bay">' + (r.bay >= 0 ? 'BAY ' + (r.bay + 1) : '—') + '</span></div>';
+      });
+    } else {
+      lg.rows.forEach(function (r, i) {
+        var p = lg.hold && lg.hold.i === i ? lg.hold.p : 0;
+        html += '<div class="lg-row lg-up' + (i === lg.sel ? ' sel' : '') + (r.afford ? ' ok' : '') + '" data-lrow="' + i + '" data-hold="' + i + '">' +
+          '<b class="lg-fill" style="width:' + Math.round(p * 100) + '%"></b>' +
+          '<span class="lg-name">' + esc(r.name) + ' <span class="ed-dim">' + r.level + '/' + r.max + '</span><i>' + esc(r.now) + (r.next ? ' → ' + esc(r.next) : ' · top level') + '</i></span>' +
+          '<span class="lg-val">' + (r.cost === null ? '—' : fmt(r.cost)) + '<i>' + (r.cost === null ? '' : 'cr') + '</i></span></div>';
+      });
+    }
+    html += '</div>';
+    html += lg.tab === 'bays'
+      ? '<div class="lg-foot"><button class="tile" data-act="lopen">Start  Open contract</button><button class="tile" data-act="board">B  Contracts</button></div>'
+      : '<div class="lg-foot"><span class="ed-dim">Press and hold to buy (hold A).</span><button class="tile" data-act="board">B  Contracts</button></div>';
+    q.ledger.innerHTML = html;
+    this.renderLedgerMsg(vm);
+    var sel = q.ledger.querySelector('.lg-row.sel'), list = q.ledger.querySelector('.lg-list');
+    if (sel && list) {
+      var top = sel.offsetTop - list.offsetTop, bottom = top + sel.offsetHeight;
+      if (top < list.scrollTop) list.scrollTop = top - 4;
+      else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight + 4;
+    }
+  };
+
+  Editor.prototype.renderLedgerMsg = function (vm) {
+    var q = this.q, f = vm.flash;
+    q.msg.className = 'ed-msg ' + (f ? f.kind : '');
+    q.msg.textContent = f ? f.msg : vm.ledger.report ? 'A or tap Continue.' : vm.ledger.tab === 'bays' ? 'Tap a contract, tap again to move it in or out of a bay.' : 'Upgrades grow the business. They never change a contract.';
   };
 
   root.OvershiftEditor = Editor;

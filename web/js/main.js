@@ -73,7 +73,13 @@
   // the shell calls this when the second screen comes or goes (hot-plug); state is untouched
   Overshift.setLayout = function (l) { setLayout(l); dirty = true; };
   Overshift.nativeButton = function (b, down) { sfx.unlock(); input.native(b, down); };
-  Overshift.onPause = function () { game.pause(); dirty = true; };
+  // the shell calls these when the app loses and regains the foreground; the Ledger pays the time between
+  Overshift.onPause = function () { game.pause(); game.ledgerPause && game.ledgerPause(); dirty = true; };
+  Overshift.onResume = function () { game.ledgerResume && game.ledgerResume(); dirty = true; };
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') Overshift.onPause(); else Overshift.onResume();
+  });
+  root.addEventListener('pagehide', function () { Overshift.onPause(); });
   Overshift.game = game;
 
   ['pointerdown', 'keydown'].forEach(function (ev) { root.addEventListener(ev, function () { sfx.unlock(); }, { capture: true }); });

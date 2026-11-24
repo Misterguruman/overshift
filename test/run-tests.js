@@ -10,8 +10,11 @@ const C = require(path.join(__dirname, '../web/js/core.js'));
 globalThis.OvershiftCore = C;
 const F = require(path.join(__dirname, '../web/js/floor.js'));
 globalThis.OvershiftFloor = F;
+const LG = require(path.join(__dirname, '../web/js/ledger.js'));
+globalThis.OvershiftLedger = LG;
 require(path.join(__dirname, '../web/js/game.js'));
 require(path.join(__dirname, '../web/js/floorgame.js'));
+require(path.join(__dirname, '../web/js/ledgergame.js'));
 const Game = globalThis.OvershiftGame;
 
 let pass = 0, fail = 0;
@@ -397,9 +400,194 @@ ok(g.program.length === 1 && g.program[0].op === 'PAINT' && g.paletteIdx === 0, 
 g.act({ type: 'btn', b: 'L1', phase: 'down' }); press(g, 'L3'); g.act({ type: 'btn', b: 'L1', phase: 'up' });
 ok(g.overlay === 'board' && g.fmode === 'program', 'L1 + L3 opens the contract board');
 press(g, 'R1');
-ok(g.boardSel === (N1 + 6 + 10) % Game.LEVELS.length, 'R1 on the board flips to the other chapter', g.boardSel);
+ok(g.overlay === 'ledger', 'R1 on the last chapter page flips to the Ledger page', g.overlay);
+press(g, 'R1');
+ok(g.overlay === 'board' && g.boardSel === (N1 + 6 + 10) % Game.LEVELS.length, 'R1 on the Ledger flips to chapter 1, same slot', g.boardSel);
+press(g, 'L1'); press(g, 'L1');
+ok(g.overlay === 'board' && g.boardSel === N1 + 6, 'L1 twice goes back through the Ledger to chapter 2', g.boardSel);
 press(g, 'B');
 ok(g.overlay === null, 'B closes the board');
+
+
+// ---------------- the Ledger (idle earnings, business layer slice 1) ----------------
+console.log('\nThe Ledger');
+{
+  const ALL = Game.LEVELS;
+  const byId = LG.index(ALL);
+  const H = LG.HOUR;
+  // base rates: Night Shift 20 to 70, Junction Floor 90 to 180, rising with the contract
+  ok(LG.baseRate(ALL[0]) === 20 && LG.baseRate(ALL[9]) === 70, 'Night Shift base runs 20 to 70 cr/h');
+  ok(LG.baseRate(ALL[10]) === 90 && LG.baseRate(ALL[19]) === 180, 'Junction Floor base runs 90 to 180 cr/h');
+  let rising = true;
+  for (let i = 1; i < ALL.length; i++) if (LG.baseRate(ALL[i]) <= LG.baseRate(ALL[i - 1])) rising = false;
+  ok(rising, 'base rates rise with every contract');
+  // a solution at par earns exactly the base rate, for all 20 contracts
+  for (const lv of ALL) ok(Math.abs(LG.rate(lv, LG.parRun(lv)) - LG.baseRate(lv)) < 1e-9, `${lv.name}: par earns exactly base`);
+  // the doc's worked example: Double Time, 6 lines, 80% of par cycles
+  const dt = L('double-time');
+  const ex = LG.rate(dt, { size: 6, cycles: dt.parCycles * 0.8 });
+  ok(Math.abs(ex - 70 * 1.25 * 7 / 6) < 1e-6 && Math.round(ex) === 102, 'Double Time worked example earns about 102 cr/h', ex);
+  // clamps
+  let f = LG.factors(dt, { size: 1, cycles: 1 });
+  ok(f.speed === 2 && f.lean === 1.5, 'Speed caps at 2.0 and Lean at 1.5', JSON.stringify(f));
+  f = LG.factors(dt, { size: 999, cycles: 1e6 });
+  ok(f.speed === 0.5 && f.lean === 0.5, 'a sloppy clear earns at least half on each factor, never nothing', JSON.stringify(f));
+  const fl = F.LEVELS[0];
+  ok(LG.factors(fl, { size: fl.parSize, cycles: fl.parCycles, parts: 1 }).tidy === 1.2, 'Tidy caps at 1.2');
+  ok(LG.factors(fl, { size: fl.parSize, cycles: fl.parCycles, parts: 999 }).tidy === 0.8, 'Tidy floors at 0.8');
+  ok(LG.factors(dt, { size: 7, cycles: dt.parCycles, parts: 1 }).tidy === 1, 'Tidy only counts on floors');
+  ok(Math.abs(LG.rate(dt, LG.parRun(dt), 3) - 70 * 1.3) < 1e-9, 'each Overclock level adds 10%');
+
+  // settle: pays by the hour, caps at one shift, a clock moved back pays nothing
+  let sv = { runs: { 'double-time': LG.parRun(dt) } };
+  LG.migrate(sv, ALL, null, 1000);
+  sv.ledger.bays = ['double-time'];
+  let r1 = LG.settle(sv, ALL, 1000 + H);
+  ok(Math.abs(r1.total - 70) < 1e-9 && Math.abs(sv.ledger.credits - 70) < 1e-9 && r1.away, 'one hour away pays one hour of the bay', r1.total);
+  r1 = LG.settle(sv, ALL, 1000 + H + 30 * H);
+  ok(Math.abs(r1.total - 70 * 8) < 1e-9 && r1.capped, 'thirty hours away pays one 8-hour shift', r1.total);
+  const before = sv.ledger.credits;
+  r1 = LG.settle(sv, ALL, 5000);
+  ok(r1.backwards && r1.total === 0 && sv.ledger.credits === before && sv.ledger.lastSeen === 5000, 'a clock moved backwards pays nothing and resets the stored time');
+  r1 = LG.settle(sv, ALL, 5000 + 2 * 60 * 1000);
+  ok(!r1.away && Math.abs(r1.total - 70 / 30) < 1e-9, 'two minutes away pays quietly, with no report');
+  sv.ledger.up.shift = 1;
+  r1 = LG.settle(sv, ALL, 5000 + 2 * 60 * 1000 + 30 * H);
+  ok(Math.abs(r1.total - 70 * 10) < 1e-9, 'Shift length level 1 pays up to 10 hours');
+
+  // upgrades: costs, effects, and never a change to a contract
+  sv = { runs: {} };
+  LG.migrate(sv, ALL, null, 0);
+  let b = LG.buy(sv, ALL, 'bays');
+  ok(!b.ok && /300/.test(b.msg), 'an upgrade you can\'t afford is refused', b.msg);
+  const snap = () => JSON.stringify(ALL.map(lv => [lv.id, lv.palette, lv.limit, lv.parSize, lv.parCycles, lv.parParts, lv.streams, lv.slots, lv.kit, lv.W, lv.H]));
+  const levelsBefore = snap();
+  sv.ledger.credits = 1e9;
+  for (const u of LG.UPGRADES) { let k = 0; while (LG.buy(sv, ALL, u.id).ok) k++; ok(k === u.costs.length, `${u.name} buys ${u.costs.length} levels`, k); }
+  ok(LG.bayCount(sv.ledger) === 12 && LG.shiftHours(sv.ledger) === 24 && Math.abs(LG.overclock(sv.ledger) - 1.5) < 1e-9, 'top levels: 12 bays, 24h shift, +50%');
+  ok(LG.upgradeCost(sv.ledger, 'bays') === null && !LG.buy(sv, ALL, 'bays').ok, 'a maxed upgrade can\'t be bought again');
+  ok(snap() === levelsBefore, 'buying every upgrade leaves every contract\'s parts, caps, streams and pars unchanged');
+
+  // a clear pays once, keeps the best-earning run, and fills a free bay
+  sv = { runs: {} };
+  LG.migrate(sv, ALL, null, 0);
+  let rc = LG.recordClear(sv, ALL, dt, { size: 9, cycles: dt.parCycles * 2 });
+  ok(rc.pay.total === 70 * 4 && rc.bay === 0 && rc.slotted, 'a first clear pays 4 hours of base and takes a free bay', JSON.stringify(rc.pay));
+  rc = LG.recordClear(sv, ALL, dt, { size: 7, cycles: dt.parCycles });
+  ok(rc.pay.total === 70 * 4 && rc.better, 'beating par on Size and Cycles pays the Lean and Fast chips (2 hours each)', rc.pay.total);
+  rc = LG.recordClear(sv, ALL, dt, { size: 6, cycles: dt.parCycles * 3 });
+  ok(rc.pay.total === 0 && !rc.better && rc.worse && sv.runs['double-time'].size === 7, 'a clear that earns less pays nothing and keeps the better run');
+  ok(LG.toggleBay(sv, ALL, 'double-time').inBay === false && sv.ledger.bays.length === 0, 'a contract can leave its bay');
+  ok(!LG.toggleBay(sv, ALL, 'clock-in').ok, 'an uncleared contract can\'t take a bay');
+
+  // migration of a save from before the Ledger
+  const store = {};
+  globalThis.localStorage = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } };
+  const old = { current: 3, cleared: {}, best: {}, programs: {}, floors: {} };
+  for (const id of ['clock-in', 'defects', 'respray', 'boost']) {
+    const lv = L(id);
+    old.cleared[id] = true;
+    old.programs[id] = lv.referenceProgram;
+    old.best[id] = { size: lv.parSize, cycles: lv.parCycles + 5 }; // Lean chip only
+  }
+  old.programs['boost'] = P('GRAB; SHIP'); // edited since its clear: no longer clears
+  const fl0 = F.LEVELS[0];
+  old.cleared[fl0.id] = true; old.floors[fl0.id] = fl0.refFloor; old.best[fl0.id] = { size: fl0.parSize, cycles: fl0.parCycles, parts: fl0.parParts };
+  const oldJson = JSON.stringify(old);
+  store['overshift.save.v1'] = oldJson;
+  let clock = 1.7e12;
+  const now = () => clock;
+  let lg = new Game({ sfx: silent, now });
+  const S = lg.save, Lg = S.ledger;
+  ok(Lg && Lg.v === 1, 'an old save gets a Ledger on first load');
+  ok(JSON.stringify(S.programs) === JSON.stringify(old.programs) && JSON.stringify(S.best) === JSON.stringify(old.best) && JSON.stringify(S.cleared) === JSON.stringify(old.cleared) && S.current === 3, 'migration keeps programs, bests, clears and the current contract');
+  ok(S.runs['clock-in'].size === L('clock-in').parSize && S.runs['clock-in'].cycles === L('clock-in').parCycles, 'a cleared program is re-scored for its bay');
+  ok(JSON.stringify(S.runs['boost']) === JSON.stringify(LG.parRun(L('boost'))), 'a program that no longer clears runs at par');
+  ok(S.runs[fl0.id] && S.runs[fl0.id].parts === fl0.parParts, 'a cleared floor is re-scored with its parts');
+  const expectPaid = ['clock-in', 'defects', 'respray', 'boost'].reduce((t, id) => t + LG.baseRate(L(id)) * 6, 0) + LG.baseRate(fl0) * 8;
+  ok(Math.abs(Lg.credits - expectPaid) < 1e-9, 'first clears and earned chips are back-paid once', Lg.credits + ' vs ' + expectPaid);
+  ok(Lg.bays.length === 3 && Lg.bays[0] === fl0.id, 'the 3 bays fill with the best earners', Lg.bays.join(','));
+  ok(Lg.lastSeen === clock, 'time before the update earns nothing');
+  ok(lg.overlay === 'report' && lg.report.kind === 'welcome', 'an old save sees what the Ledger paid', lg.overlay);
+  press(lg, 'A');
+  ok(lg.overlay === 'board', 'A continues to the contract board');
+  const saved = JSON.parse(store['overshift.save.v1']);
+  ok(saved.ledger && saved.runs && saved.programs['clock-in'], 'the migrated save is written back');
+
+  // reload: nothing paid twice, then time away
+  clock += 3 * H;
+  lg = new Game({ sfx: silent, now });
+  ok(Math.abs(lg.save.ledger.credits - expectPaid - 3 * lg.ledgerRate()) < 1e-6, 'reopening pays the bays for 3 hours, and no clear is paid twice', lg.save.ledger.credits);
+  ok(lg.overlay === 'report' && lg.report.kind === 'away' && lg.report.rows.length === 3, 'more than 5 minutes away shows the Shift report');
+  press(lg, 'B');
+  ok(lg.overlay === 'board', 'the report closes back to where you were');
+
+  // while playing: bays earn as the clock runs, with no report
+  const c0 = lg.save.ledger.credits, rate = lg.ledgerRate();
+  clock += 60 * 1000; lg.tick(1.1);
+  ok(Math.abs(lg.save.ledger.credits - c0 - rate / 60) < 1e-6 && lg.overlay === 'board', 'a minute of play earns a minute of income');
+  // pause and resume (the shell's onPause / onResume): paid, capped at the shift
+  lg.ledgerPause();
+  const c1 = lg.save.ledger.credits;
+  clock += 40 * H; lg.tick(1.1);
+  ok(lg.save.ledger.credits === c1, 'nothing settles while paused');
+  lg.ledgerResume();
+  ok(Math.abs(lg.save.ledger.credits - c1 - 8 * rate) < 1e-6 && lg.report.capped, 'resuming after 40 hours pays one 8-hour shift', lg.save.ledger.credits - c1);
+  press(lg, 'A');
+
+  // the Ledger page with the gamepad
+  lg.overlay = 'board'; lg.boardSel = 0;
+  press(lg, 'L1');
+  ok(lg.overlay === 'ledger', 'L1 on chapter 1 opens the Ledger page');
+  let vm = lg.viewModel();
+  ok(vm.ledger && vm.ledger.tab === 'bays' && vm.ledger.rows.length === 5 && vm.ledger.bayCap === 3, 'the Bays tab lists every cleared contract', vm.ledger && vm.ledger.rows.length);
+  const outRow = vm.ledger.rows.findIndex(r => r.bay < 0);
+  lg.ledgerSel = outRow; press(lg, 'A');
+  ok(/bays are busy/.test(lg.flashMsg.msg), 'A on a contract with every bay busy says so');
+  lg.ledgerSel = vm.ledger.rows.findIndex(r => r.bay === 0); press(lg, 'A');
+  ok(lg.save.ledger.bays.length === 2, 'A takes a contract out of its bay');
+  lg.ledgerSel = outRow; press(lg, 'A');
+  ok(lg.save.ledger.bays.length === 3 && lg.save.ledger.bays.includes(vm.ledger.rows[outRow].id), 'A puts another in the free bay');
+  press(lg, 'R2');
+  vm = lg.viewModel();
+  ok(vm.ledger.tab === 'upgrades' && vm.ledger.rows.length === 3, 'R2 switches to Upgrades');
+  const cr0 = lg.save.ledger.credits;
+  lg.ledgerSel = 0;
+  lg.act({ type: 'btn', b: 'A', phase: 'down' });
+  lg.tick(0.2);
+  ok(lg.save.ledger.up.bays === 0 && lg.viewModel().ledger.hold.p > 0, 'holding A fills the buy ring before anything is bought');
+  lg.act({ type: 'btn', b: 'A', phase: 'up' });
+  lg.tick(0.5);
+  ok(lg.save.ledger.up.bays === 0, 'letting go early buys nothing');
+  lg.act({ type: 'btn', b: 'A', phase: 'down' }); lg.tick(0.3); lg.tick(0.3);
+  ok(lg.save.ledger.up.bays === 1 && Math.abs(lg.save.ledger.credits - (cr0 - 300)) < 1e-6 && lg.save.ledger.bays.length === 4, 'a half-second hold buys a 4th bay, which fills itself', lg.save.ledger.credits);
+  lg.tick(0.6);
+  ok(lg.save.ledger.up.bays === 1, 'one hold buys one level');
+  lg.act({ type: 'btn', b: 'A', phase: 'up' });
+  lg.act({ type: 'hold', i: 1, on: true }); lg.tick(0.6); lg.act({ type: 'hold', i: 1, on: false });
+  ok(lg.save.ledger.up.overclock === 1, 'press and hold on the bottom screen buys too');
+  press(lg, 'L2');
+  lg.ledgerSel = 0;
+  press(lg, 'start');
+  ok(lg.overlay === null && lg.level.id === lg.ledgerRows()[0].id, 'Start opens the selected contract to improve it');
+  lg.act({ type: 'ledger' });
+  ok(lg.overlay === 'ledger', 'the ₵ button opens the Ledger');
+  press(lg, 'B');
+  ok(lg.overlay === 'board', 'B goes back to the contract board');
+
+  // a clear through the game host pays and fills the new bay
+  lg.selectLevel(4, true);
+  lg.program = L('bulk-order').referenceProgram.slice(); lg.afterEdit();
+  lg.run(true); let gd = 0;
+  while (lg.mode !== 'done' && gd++ < 5000) lg.tick(0.5);
+  ok(lg.overlay === 'cleared' && lg.result.ledger && lg.result.ledger.pay.total === LG.baseRate(L('bulk-order')) * 8, 'clearing Bulk Order at par pays first clear and both chips', lg.result.ledger && lg.result.ledger.pay.total);
+  ok(lg.result.ledger.bay >= 0 || lg.save.ledger.bays.length === LG.bayCount(lg.save.ledger), 'the new clear takes a bay if one is free');
+  delete globalThis.localStorage;
+
+  // a fresh install starts with an empty Ledger and no report
+  const g0 = new Game({ sfx: silent, now });
+  ok(g0.save.ledger.credits === 0 && g0.overlay === 'board', 'a new player starts at 0 cr on the board');
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

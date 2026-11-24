@@ -17,6 +17,10 @@ The deck runs on the top screen; you write Servo's program on the bottom screen.
 - `web/js/dispatch.js` Dispatch's rules: trucks, orders, stock, chapter 3 contracts and the city
   routes sample hour (pure); `dispatchgame.js` its host logic; `dispatchdeck.js` its map and Ledger tab
 - `tools/curve.js` (`npm run curve`) prints the Ledger's economy curve from the real contract data
+- `web/js/fx.js` visual effects on the top screen (sparks, rings, the staged Contract Cleared reveal,
+  unlock banners, NEW cards, Ledger coins and upgrade banners) and `edfx.js` small ones on the bottom
+  screen. Purely visual: `test/fx-tests.js` checks a full play-through saves the same with and without
+  them. `?fx=low` (or the system's reduced-motion setting) keeps a few soft ones; `?fx=off` turns them off
 - `web/js/deck.js` the top-screen canvas view; `editor.js` the bottom-screen editor; `input.js`
   keyboard, Gamepad API and shell buttons; `audio.js` synthesized sound; `main.js` screen roles and transport
 - `dist/overshift.html` one self-contained file of the whole game (made by `node tools/build.js`)

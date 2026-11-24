@@ -145,7 +145,8 @@
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.fillStyle = '#000';
     g.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    g.setTransform(this.scale, 0, 0, this.scale, this.ox, this.oy);
+    // shakeX / shakeY: a brief jolt from fx.js on a fault (logical pixels; hit tests ignore it)
+    g.setTransform(this.scale, 0, 0, this.scale, this.ox + (this.shakeX || 0) * this.scale, this.oy + (this.shakeY || 0) * this.scale);
     g.save();
     g.beginPath(); g.rect(0, 0, W, H); g.clip();
 
@@ -408,9 +409,9 @@
     this.text(line, W / 2, 1018, 20, DIM, 'center', '500');
   };
 
-  Deck.prototype.panel = function (x, y, w, h, col) {
+  Deck.prototype.panel = function (x, y, w, h, col, noDim) {
     var g = this.g;
-    g.fillStyle = 'rgba(0,0,0,0.78)'; g.fillRect(0, 0, W, H);
+    if (!noDim) { g.fillStyle = 'rgba(0,0,0,0.78)'; g.fillRect(0, 0, W, H); }
     this.roundRect(x, y, w, h, 20);
     g.fillStyle = '#04080f'; g.fill();
     this.glow(col, 30); g.strokeStyle = col; g.lineWidth = 3; g.stroke(); this.noGlow();
@@ -427,10 +428,19 @@
   };
 
   Deck.prototype.drawCleared = function (game) {
-    var r = game.result, lv = game.level;
+    var r = game.result, lv = game.level, g = this.g;
+    // staged reveal from fx.js: the panel pops in, chips land one by one, scores count up
+    var s = this.clearStage ? this.clearStage(game) : null, t = s ? s.t : 99;
+    function at(t0, d) { var k = (t - t0) / (d || 0.3); return k < 0 ? 0 : k > 1 ? 1 : k; }
+    function pop(k) { if (!s || !s.pop) return k > 0 ? 1 : 0; k -= 1; return k * k * (2.9 * k + 1.9) + 1; }
     this.hits = [];
-    this.panel(460, 230, 1000, 580, GREEN);
-    this.glow(GREEN, 24);
+    g.fillStyle = 'rgba(0,0,0,' + (0.78 * Math.min(1, t / 0.2)) + ')'; g.fillRect(0, 0, W, H);
+    var ps = s && s.pop ? 0.82 + 0.18 * pop(at(0, 0.32)) : 1;
+    g.save();
+    g.globalAlpha = Math.min(1, t / 0.15);
+    g.translate(W / 2, 520); g.scale(ps, ps); g.translate(-W / 2, -520);
+    this.panel(460, 230, 1000, 580, GREEN, true);
+    this.glow(GREEN, 24 + 40 * Math.max(0, 1 - t / 0.9));
     this.text('CONTRACT CLEARED', W / 2, 310, 54, GREEN, 'center', '700');
     this.noGlow();
     this.text(lv.name + ' · all ' + lv.streams.length + ' stream' + (lv.streams.length > 1 ? 's' : '') + ' filled', W / 2, 370, 26, DIM, 'center');
@@ -438,23 +448,46 @@
     var chips = [['CLEARED', true], ['LEAN', lean], ['FAST', fast]];
     for (var i = 0; i < 3; i++) {
       var x = W / 2 - 330 + i * 230, on = chips[i][1];
+      var k = s ? at(s.chipAt[i], 0.28) : 1;
+      if (k <= 0) continue;
       var col = on ? (i === 0 ? GREEN : i === 1 ? COL.cyan : COL.magenta) : FAINT;
+      var cs = on ? pop(k) : 1;
+      g.save();
+      g.globalAlpha = on ? Math.min(1, k * 3) : k;
+      g.translate(x + 100, 455); g.scale(cs, cs); g.translate(-x - 100, -455);
       this.roundRect(x, 420, 200, 70, 35);
-      this.g.fillStyle = on ? 'rgba(255,255,255,0.05)' : 'transparent'; this.g.fill();
-      if (on) this.glow(col, 16);
-      this.g.strokeStyle = col; this.g.lineWidth = 3; this.g.stroke(); this.noGlow();
+      g.fillStyle = on ? 'rgba(255,255,255,' + (0.05 + 0.2 * (1 - k)) + ')' : 'transparent'; g.fill();
+      if (on) this.glow(col, 16 + 30 * (1 - k));
+      g.strokeStyle = col; g.lineWidth = 3; g.stroke(); this.noGlow();
       this.text(chips[i][0], x + 100, 455, 26, on ? col : DIM, 'center', '700');
+      g.restore();
     }
-    this.text('Size ' + r.size + '  (par ' + lv.parSize + ')', W / 2 - 200, 550, 30, lean ? COL.cyan : INK, 'center', '600');
-    this.text('Cycles ' + r.cycles + '  (par ' + lv.parCycles + ')', W / 2 + 200, 550, 30, fast ? COL.magenta : INK, 'center', '600');
+    var cnt = s ? at(0.35, 0.7) : 1;
+    cnt = 1 - Math.pow(1 - cnt, 3);
+    this.text('Size ' + Math.round(r.size * cnt) + '  (par ' + lv.parSize + ')', W / 2 - 200, 550, 30, lean ? COL.cyan : INK, 'center', '600');
+    this.text('Cycles ' + Math.round(r.cycles * cnt) + '  (par ' + lv.parCycles + ')', W / 2 + 200, 550, 30, fast ? COL.magenta : INK, 'center', '600');
+    if (s && (s.bestSize || s.bestCycles)) {
+      var bk = at(1.25, 0.3), bs = pop(bk);
+      if (bk > 0) {
+        g.save(); g.globalAlpha = Math.min(1, bk * 3);
+        if (s.bestSize) this.text('NEW BEST', W / 2 - 200, 512 - 6 * (bs - 1), 20 * bs, COL.amber, 'center', '700');
+        if (s.bestCycles) this.text('NEW BEST', W / 2 + 200, 512 - 6 * (bs - 1), 20 * bs, COL.amber, 'center', '700');
+        g.restore();
+      }
+    }
     var tip = lean && fast ? 'Both chips. Clean shift.' : 'Beat par on Size or Cycles for a bonus chip.';
     if (r.parts !== undefined) tip = 'Parts ' + r.parts + ' (par ' + lv.parParts + ')   ·   ' + tip;
+    g.save(); g.globalAlpha = s ? at(1.0, 0.4) : 1;
     this.text(tip, W / 2, 600, 24, DIM, 'center');
+    g.globalAlpha = s ? at(1.2, 0.4) : 1;
     if (r.ledger && this.clearedPayLine) this.clearedPayLine(r.ledger, W / 2, 646);
+    g.restore();
     var all = game.constructor.LEVELS || C.LEVELS;
     var last = lv.index === all.length - 1;
     this.button(last ? 'A  Contracts' : 'A  Next contract', W / 2 - 330, 700, 320, 76, GREEN, { type: 'next' }, true);
     this.button('B  Keep editing', W / 2 + 10, 700, 320, 76, INK, { type: 'close' });
+    g.restore();
+    if (s && this.drawUnlockBanner) this.drawUnlockBanner(s);
   };
 
   Deck.prototype.drawBoard = function (game) {
@@ -502,6 +535,7 @@
         this.text('LEAN', cx + 150, cy + 262, 20, lean ? COL.cyan : FAINT, 'left', '700');
         this.text('FAST', cx + 220, cy + 262, 20, fast ? COL.magenta : FAINT, 'left', '700');
       }
+      if (unlocked && this.drawFreshCard) this.drawFreshCard(lv, cx, cy, cw, ch);
       this.hit(cx, cy, cw, ch, { type: 'level', i: i });
     }
     this.button('×', W - 170, 100, 60, 60, INK, { type: 'close' });

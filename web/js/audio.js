@@ -85,6 +85,9 @@
         case 'tick': this.tone(1000, 0.025, 'sine', 0.06); break;
         case 'back': this.tone(500, 0.06, 'sine', 0.08, 0, 350); break;
         case 'deny': this.tone(160, 0.12, 'square', 0.08); break;
+        case 'chip': this.tone(SCALE[Math.min(9, 5 + (ev.i || 0) * 1)] * 2, 0.22, 'triangle', 0.16); this.tone(SCALE[Math.min(9, 5 + (ev.i || 0))] * 4, 0.12, 'sine', 0.05, 0.03); break;
+        case 'unlock': [0, 4, 7, 9].forEach(function (k, i) { this.tone(SCALE[k] * (ev.big ? 1 : 2), 0.4, 'triangle', 0.14, i * 0.07); }, this); if (ev.big) this.tone(SCALE[9] * 2, 0.6, 'sine', 0.1, 0.3); break;
+        case 'cash': this.tone(1318, 0.08, 'square', 0.05); this.tone(1760, 0.22, 'triangle', 0.12, 0.07); break;
         case 'select': this.tone(784, 0.08, 'triangle', 0.12); this.tone(1046, 0.1, 'triangle', 0.1, 0.07); break;
       }
     } catch (e) { /* audio is optional */ }

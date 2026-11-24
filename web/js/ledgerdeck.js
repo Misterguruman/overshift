@@ -115,7 +115,10 @@
     this.text(title, 40, 44, 40, AMBER, 'left', '700');
     this.noGlow();
     this.text(sub, 40, 92, 22, DIM, 'left', '500');
-    this.text('₵ ' + LG.fmt(L.credits), W - 40, 46, 44, INK, 'right', '700');
+    var shown = this.shownCredits ? this.shownCredits(L.credits) : L.credits;
+    if (shown < L.credits - 0.5) this.glow(GREEN, 18);
+    this.text('₵ ' + LG.fmt(shown), W - 40, 46, 44, shown < L.credits - 0.5 ? '#eafff4' : INK, 'right', '700');
+    this.noGlow();
     this.text(LG.fmt(game.ledgerRate()) + ' cr/h   ·   ' + L.bays.length + '/' + LG.bayCount(L) + ' bays   ·   ' + LG.shiftHours(L) + 'h shift', W - 40, 94, 22, AMBER, 'right', '500');
   };
 

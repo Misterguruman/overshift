@@ -188,6 +188,32 @@ body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user
 .lg-foot .tile { flex: 1; padding: .55em 0; }
 .lg-foot .ed-dim { flex: 1; font-size: .74em; }
 .lg-go { color: var(--green) !important; border-color: var(--green) !important; }
+/* ---- tutorial and tips (tutorview.js) ---- */
+.ed-coach { display: none; }
+.ed-coach.on { display: flex; align-items: center; gap: .5em; flex: 0 0 auto; padding: .3em .5em; border-bottom: 1px solid var(--amber); background: rgba(255,179,31,.08); font-size: .8em; line-height: 1.3; }
+.ed-coach b { color: var(--amber); flex: 0 0 auto; }
+.tc-hint { flex: 1 1 auto; min-width: 0; }
+.tc-skip { flex: 0 0 auto; padding: .25em .7em !important; color: var(--dim) !important; }
+.coach-hl { outline: 2px solid var(--amber) !important; outline-offset: 1px; animation: coach-pulse 1.1s ease-in-out infinite; }
+@keyframes coach-pulse { 50% { box-shadow: 0 0 .9em rgba(255,179,31,.85); } }
+.ed-tipcard { display: none; }
+.ed-tipping .ed-main, .ed-tipping .ed-build, .ed-tipping .ed-modes, .ed-tipping .ed-ledger, .ed-tipping .ed-transport,
+.ed-tipping .ed-msg, .ed-tipping .ed-coach { display: none !important; }
+.ed-tipping .ed-tipcard { flex: 1 1 auto; display: flex; flex-direction: column; gap: .45em; padding: .6em .75em; min-height: 0; overflow-y: auto; }
+.tc-kind { display: flex; align-items: center; font-size: .7em; color: var(--dim); letter-spacing: .08em; font-weight: 600; }
+.tc-dots { margin-left: auto; display: flex; gap: .35em; }
+.tc-dots i { width: .55em; height: .55em; border-radius: 50%; background: var(--faint); }
+.tc-dots i.on { background: var(--cyan); }
+.tc-title { color: var(--cyan); font-weight: 700; letter-spacing: .05em; }
+.tc-title.tut { color: var(--amber); }
+.tc-body { font-size: .86em; line-height: 1.4; }
+.tc-touch { font-size: .8em; color: var(--amber); line-height: 1.35; }
+.tc-foot { margin-top: auto; display: flex; gap: .4em; padding-top: .2em; }
+.tc-foot .tile { flex: 1; padding: .65em 0; }
+.tc-off { flex: 0 0 auto !important; padding: .65em .7em !important; color: var(--dim) !important; }
+.tc-go { color: var(--cyan) !important; border-color: var(--cyan) !important; }
+.tc-go.tut { color: var(--amber) !important; border-color: var(--amber) !important; }
+.ed-help { color: var(--amber); }
 </style>
 </head>
 <body>
@@ -257,6 +283,7 @@ body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user
 <script src="js/floorgame.js"></script>
 <script src="js/ledgergame.js"></script>
 <script src="js/dispatchgame.js"></script>
+<script src="js/tutor.js"></script>
 <script src="js/deck.js"></script>
 <script src="js/floordeck.js"></script>
 <script src="js/ledgerdeck.js"></script>
@@ -264,6 +291,7 @@ body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user
 <script src="js/fx.js"></script>
 <script src="js/editor.js"></script>
 <script src="js/edfx.js"></script>
+<script src="js/tutorview.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

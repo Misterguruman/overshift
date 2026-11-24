@@ -46,6 +46,7 @@
     if (!opts.skipBoard) this.overlay = 'board';
     this.boardSel = this.level.index;
     if (this.initLedger) this.initLedger();
+    if (this.initTutor) this.initTutor(opts); // tutor.js: first-run tutorial and tips
   }
 
   Game.prototype.onChange = function (fn) { this.listeners.push(fn); };

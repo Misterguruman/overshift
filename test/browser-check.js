@@ -37,11 +37,94 @@ const base = process.argv[3] || 'http://127.0.0.1:8765/index.html';
     await ctx.close();
   }
 
+  // the first-run tutorial and tips (tutor.js, tutorview.js), played by touch on one screen
+  {
+    const tc = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const tp = await tc.newPage();
+    watch(tp, 'tutorial');
+    await tp.goto(base, { waitUntil: 'load' });
+    await tp.waitForSelector('.ed-tipping .tc-go', { timeout: 5000 });
+    const st = await tp.evaluate(() => ({ state: Overshift.game.save.tut.state, overlay: Overshift.game.overlay, title: document.querySelector('.tc-title').textContent }));
+    console.log('fresh save opens the tutorial:', JSON.stringify(st));
+    if (st.state !== 'active' || st.overlay !== null) problems++;
+    await tp.screenshot({ path: `${out}/tut-welcome-desktop.png` });
+    await tp.click('.tc-go');
+    const steps = [];
+    for (let k = 0; k < 2; k++) {
+      await tp.waitForSelector('.ed-pal .coach-hl', { timeout: 3000 });
+      steps.push(await tp.evaluate(() => document.querySelector('.coach-hl').textContent));
+      if (k === 0) await tp.screenshot({ path: `${out}/tut-grab-desktop.png` });
+      await tp.click('.ed-pal .coach-hl');
+    }
+    await tp.waitForSelector('.ed-run.coach-hl', { timeout: 3000 });
+    console.log('coach points at', steps.join(', '), 'then Run');
+    if (steps.join() !== 'GRAB,SHIP') problems++;
+    await tp.click('.ed-run');
+    await tp.waitForFunction(() => Overshift.game.save.tut.step === 'more', null, { timeout: 15000 });
+    await tp.screenshot({ path: `${out}/tut-more-desktop.png` });
+    for (let k = 0; k < 2; k++) { await tp.click('.ed-pal .tile >> nth=0'); await tp.click('.ed-pal .tile >> nth=1'); }
+    await tp.click('.ed-run');
+    await tp.waitForFunction(() => Overshift.game.save.tut.step === 'cleared', null, { timeout: 15000 });
+    await tp.waitForTimeout(200);
+    await tp.screenshot({ path: `${out}/tut-cleared-desktop.png` });
+    await tp.keyboard.press('KeyZ'); // A: next contract
+    await tp.waitForTimeout(200);
+    const end = await tp.evaluate(() => ({ state: Overshift.game.save.tut.state, level: Overshift.game.level.id, coach: !!document.querySelector('.ed-coach.on') }));
+    console.log('tutorial finished:', JSON.stringify(end));
+    if (end.state !== 'done' || end.level !== 'defects' || end.coach) problems++;
+    // a fault opens its tip; the card's button closes it
+    await tp.evaluate(() => { const g = Overshift.game; g.program = OvershiftCore.parseProgram('SHIP'); g.afterEdit(); g.run(true); g.changed(); });
+    await tp.waitForSelector('.ed-tipping .tc-go', { timeout: 15000 });
+    await tp.screenshot({ path: `${out}/tip-fault-desktop.png` });
+    await tp.click('.tc-go');
+    await tp.waitForTimeout(150);
+    const closed = await tp.evaluate(() => !Overshift.game.tipCard && !document.querySelector('.ed-tipping'));
+    console.log('fault tip shown and closed:', closed);
+    if (!closed) problems++;
+    await tc.close();
+
+    // the Thor's two screens: the card's gamepad prompts on top, its touch buttons below
+    const t2 = await browser.newContext({ viewport: { width: 960, height: 540 } });
+    const top = await t2.newPage(); watch(top, 'tut-top');
+    await top.goto(base + '?screen=deck', { waitUntil: 'load' });
+    const bottom = await t2.newPage(); watch(bottom, 'tut-bottom');
+    await bottom.setViewportSize({ width: 620, height: 540 });
+    await bottom.goto(base + '?screen=editor', { waitUntil: 'load' });
+    await bottom.waitForSelector('.ed-tipping .tc-go', { timeout: 5000 });
+    const shot = async name => { await top.waitForTimeout(250); await top.screenshot({ path: `${out}/${name}-thor-top.png` }); await bottom.screenshot({ path: `${out}/${name}-thor-bottom.png` }); };
+    await shot('tut-welcome');
+    await top.keyboard.press('KeyZ'); // A on the top screen starts it
+    await bottom.waitForSelector('.ed-coach.on', { timeout: 3000 });
+    const edText = await bottom.evaluate(() => document.querySelector('.ed-coach').textContent);
+    console.log('two-screen coach on the bottom screen:', edText);
+    await shot('tut-grab');
+    await bottom.click('.ed-coach .tc-skip');
+    await top.waitForTimeout(200);
+    const skipped = await top.evaluate(() => Overshift.game.save.tut.state);
+    console.log('Skip on the bottom screen:', skipped);
+    if (skipped !== 'skipped') problems++;
+    for (const [lvl, tip] of [['two-docks', 'floor'], ['first-run', 'truck']]) {
+      await top.evaluate(id => { const g = Overshift.game; g.unlockAll = true; g.act({ type: 'level', i: OvershiftGame.LEVELS.findIndex(l => l.id === id) }); }, lvl);
+      await bottom.waitForSelector('.ed-tipping .tc-go', { timeout: 3000 });
+      const id = await top.evaluate(() => Overshift.game.tipCard && Overshift.game.tipCard.id);
+      if (id !== tip) { problems++; console.log('expected tip', tip, 'got', id); }
+      await shot('tip-' + tip);
+      await bottom.click('.tc-go'); if (tip === 'floor') await bottom.click('.tc-go');
+    }
+    await top.evaluate(() => { const g = Overshift.game; g.save.cleared['clock-in'] = true; g.overlay = 'board'; g.act({ type: 'ledger' }); });
+    await bottom.waitForSelector('.ed-tipping .tc-go', { timeout: 3000 });
+    await shot('tip-ledger');
+    await bottom.click('.tc-go');
+    await top.evaluate(() => { const g = Overshift.game; g.overlay = 'board'; g.boardSel = 0; g.changed(); });
+    await shot('board-tutorial');
+    await t2.close();
+  }
+
   // play contract 1 by keyboard on the desktop layout
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
   watch(page, 'play');
-  await page.goto(base, { waitUntil: 'load' });
+  await page.goto(base + '?tutorial=off&tips=off', { waitUntil: 'load' });
   await page.waitForTimeout(300);
   await page.keyboard.press('KeyZ'); // open contract 1 from the board
   for (let k = 0; k < 3; k++) {
